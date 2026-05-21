@@ -2,39 +2,19 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import Icon from "../components/Icon";
+import { parseBooleanQuery, matchesQuery } from "../utils/booleanSearch";
 import "../styles/pages.css";
 
 type Requirement = { id: string; req_id: string; requirement_name: string; assigned_recruiters?: string[] };
 
-const KEYWORD_GROUPS: [string[], string][] = [
-  [["qa", "qe", "sdet", "quality assurance", "quality engineer", "quality analyst", "test automation", "automation test", "software test", "automation"], "QA / Automation"],
-  [["fullstack", "full stack", "full-stack"], "Full Stack"],
-  [["frontend", "front end", "front-end"], "Frontend"],
-  [["backend", "back end", "back-end"], "Backend"],
-  [["devops", "site reliability", "sre", "cloud engineer", "platform engineer"], "DevOps"],
-  [["data scien", "machine learning", "ml engineer", "ai engineer", "data engineer"], "Data / ML"],
-  [["android", "ios", "flutter", "mobile developer", "react native"], "Mobile"],
-  [["product manager", "product owner", "scrum master"], "Product"],
-];
-
-const SENIORITY_PREFIXES = ["senior", "junior", "lead", "staff", "principal", "associate", "sr.", "jr.", "sr", "jr", "entry-level", "mid-level", "mid"];
-const ROLE_SUFFIXES = ["developer", "engineer", "architect", "programmer", "dev", "specialist", "consultant", "analyst", "designer", "expert"];
-
-function extractRoleGroup(role: string): string {
-  const lower = role.trim().toLowerCase();
-  for (const [keywords, group] of KEYWORD_GROUPS) {
-    if (keywords.some(k => lower.includes(k))) return group;
-  }
-  let s = lower;
-  for (const p of SENIORITY_PREFIXES) {
-    if (s.startsWith(p + " ")) { s = s.slice(p.length + 1).trim(); break; }
-  }
-  for (const suffix of ROLE_SUFFIXES) {
-    if (s.endsWith(" " + suffix)) { s = s.slice(0, -(suffix.length + 1)).trim(); break; }
-  }
-  const atIdx = s.indexOf(" at ");
-  if (atIdx > 0) s = s.slice(0, atIdx).trim();
-  return s.replace(/\b\w/g, c => c.toUpperCase()) || role.trim();
+function parseExpYears(label?: string | null): number | null {
+  if (!label) return null;
+  let years = 0;
+  const yMatch = label.match(/(\d+)\s*yr/i);
+  if (yMatch) years += parseInt(yMatch[1]);
+  const mMatch = label.match(/(\d+)\s*mo/i);
+  if (mMatch) years += parseInt(mMatch[1]) / 12;
+  return years > 0 ? years : null;
 }
 
 type Candidate = {
@@ -69,8 +49,12 @@ export default function TalentPool() {
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; fileName: string } | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
-  const [roleFilter, setRoleFilter] = useState("");
-  const [skippedFiles, setSkippedFiles] = useState<string[]>([]);
+  const [skillsInput, setSkillsInput] = useState("");
+  const [roleInput, setRoleInput] = useState("");
+  const [expMin, setExpMin] = useState("");
+  const [expMax, setExpMax] = useState("");
+  type DuplicateDetail = { filename: string; message: string };
+  const [skippedFiles, setSkippedFiles] = useState<DuplicateDetail[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Send to requirement
@@ -134,7 +118,7 @@ export default function TalentPool() {
     setSkippedFiles([]);
 
     let createdCount = 0, duplicateCount = 0, failedCount = 0, aiFailedCount = 0;
-    const skipped: string[] = [];
+    const skipped: DuplicateDetail[] = [];
     const failedDetails: string[] = [];
 
     for (let i = 0; i < files.length; i++) {
@@ -150,7 +134,7 @@ export default function TalentPool() {
         aiFailedCount += res.ai_failed_count || 0;
         if (res.items) {
           for (const item of res.items) {
-            if (item.status === "duplicate") skipped.push(item.filename);
+            if (item.status === "duplicate") skipped.push({ filename: item.filename, message: item.message || "" });
             if (item.status === "failed") failedDetails.push(`${item.filename}: ${item.message || "unknown error"}`);
           }
         }
@@ -326,17 +310,41 @@ export default function TalentPool() {
     }
   };
 
-  const roleOptions = useMemo(() => {
-    const groups = candidates
-      .map((c) => { const r = getDisplayRole(c); return r ? extractRoleGroup(r) : null; })
-      .filter((r): r is string => !!r);
-    return Array.from(new Set(groups)).sort();
-  }, [candidates]);
+  const skillsNode = useMemo(() => {
+    if (!skillsInput.trim()) return null;
+    const parts = skillsInput.split(",").map(p => p.trim()).filter(Boolean);
+    if (!parts.length) return null;
+    return parseBooleanQuery(parts.join(" OR "));
+  }, [skillsInput]);
 
   const filteredCandidates = useMemo(() => {
-    if (!roleFilter) return candidates;
-    return candidates.filter((c) => { const r = getDisplayRole(c); return r && extractRoleGroup(r) === roleFilter; });
-  }, [candidates, roleFilter]);
+    let list = candidates;
+    if (skillsNode) {
+      list = list.filter((c) => {
+        const text = (c.Skills ?? []).join(" ").toLowerCase();
+        return matchesQuery(skillsNode, text);
+      });
+    }
+    if (roleInput.trim()) {
+      const roleLower = roleInput.trim().toLowerCase();
+      list = list.filter((c) => {
+        const role = getDisplayRole(c);
+        return role ? role.toLowerCase().includes(roleLower) : false;
+      });
+    }
+    if (expMin || expMax) {
+      const min = expMin ? parseFloat(expMin) : null;
+      const max = expMax ? parseFloat(expMax) : null;
+      list = list.filter((c) => {
+        const exp = parseExpYears(c.experience_label);
+        if (exp === null) return false;
+        if (min !== null && exp < min) return false;
+        if (max !== null && exp > max) return false;
+        return true;
+      });
+    }
+    return list;
+  }, [candidates, skillsNode, roleInput, expMin, expMax]);
 
   const selectedIdSet = useMemo(() => new Set(selectedCandidateIds), [selectedCandidateIds]);
 
@@ -347,21 +355,83 @@ export default function TalentPool() {
           <h1>Talent Pool</h1>
           <p className="page-header-sub">
             {candidates.length} profile{candidates.length !== 1 ? "s" : ""}
-            {roleFilter && ` · ${filteredCandidates.length} shown`}
+            {(skillsInput || roleInput || expMin || expMax) && ` · ${filteredCandidates.length} shown`}
           </p>
         </div>
-        <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
-          {roleOptions.length > 0 && (
-            <select
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value)}
-              style={{ padding: "0.4rem 0.75rem", borderRadius: "8px", border: "1px solid var(--border-subtle)", background: "var(--bg-input)", color: roleFilter ? "var(--fg-primary)" : "var(--text-muted)", fontSize: "var(--font-size-sm)", cursor: "pointer" }}
-            >
-              <option value="">All Roles</option>
-              {roleOptions.map((role) => <option key={role} value={role}>{role}</option>)}
-            </select>
+        <button className="btn btn-ghost" onClick={() => void refreshAll()}>Refresh</button>
+      </div>
+
+      {/* Structured search bar */}
+      <div style={{ display: "flex", gap: "0.75rem", alignItems: "flex-start", flexWrap: "wrap", marginBottom: "1.25rem", padding: "0.75rem 1rem", background: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: "10px" }}>
+        {/* Skills */}
+        <div style={{ flex: "2 1 220px", minWidth: 180 }}>
+          <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", marginBottom: "0.3rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>Skills / Keywords</label>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", height: 34, border: "1px solid var(--border-subtle)", borderRadius: "6px", background: "var(--bg-input)", padding: "0 0.6rem" }}>
+            <Icon name="search" size={13} />
+            <input
+              type="text"
+              value={skillsInput}
+              onChange={e => setSkillsInput(e.target.value)}
+              placeholder="Java, React, AWS"
+              style={{ border: "none", outline: "none", background: "transparent", fontSize: 13, color: "var(--text-primary)", width: "100%", height: "100%" }}
+            />
+            {skillsInput && <button onClick={() => setSkillsInput("")} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", padding: 0, lineHeight: 1, fontSize: 16, flexShrink: 0 }}>×</button>}
+          </div>
+          <div style={{ fontSize: 10, color: "var(--text-secondary)", marginTop: "0.25rem", lineHeight: 1.4 }}>Comma = OR &nbsp;·&nbsp; Space = AND</div>
+        </div>
+
+        {/* Role */}
+        <div style={{ flex: "2 1 180px", minWidth: 150 }}>
+          <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", marginBottom: "0.3rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>Role / Designation</label>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", height: 34, border: "1px solid var(--border-subtle)", borderRadius: "6px", background: "var(--bg-input)", padding: "0 0.6rem" }}>
+            <input
+              type="text"
+              value={roleInput}
+              onChange={e => setRoleInput(e.target.value)}
+              placeholder="e.g. Full Stack Developer"
+              style={{ border: "none", outline: "none", background: "transparent", fontSize: 13, color: "var(--text-primary)", width: "100%", height: "100%" }}
+            />
+            {roleInput && <button onClick={() => setRoleInput("")} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", padding: 0, lineHeight: 1, fontSize: 16, flexShrink: 0 }}>×</button>}
+          </div>
+          <div style={{ fontSize: 10, color: "var(--text-secondary)", marginTop: "0.25rem", lineHeight: 1.4 }}>Partial match on job title</div>
+        </div>
+
+        {/* Experience */}
+        <div style={{ flex: "1 1 160px", minWidth: 140 }}>
+          <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", marginBottom: "0.3rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>Experience (yrs)</label>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", height: 34 }}>
+            <input
+              type="number"
+              value={expMin}
+              onChange={e => setExpMin(e.target.value)}
+              placeholder="Min"
+              min={0}
+              style={{ width: "62px", height: "100%", padding: "0 0.5rem", border: "1px solid var(--border-subtle)", borderRadius: "6px", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: 13, outline: "none", boxSizing: "border-box" }}
+            />
+            <span style={{ color: "var(--text-secondary)", fontSize: 12, flexShrink: 0 }}>to</span>
+            <input
+              type="number"
+              value={expMax}
+              onChange={e => setExpMax(e.target.value)}
+              placeholder="Max"
+              min={0}
+              style={{ width: "62px", height: "100%", padding: "0 0.5rem", border: "1px solid var(--border-subtle)", borderRadius: "6px", background: "var(--bg-input)", color: "var(--text-primary)", fontSize: 13, outline: "none", boxSizing: "border-box" }}
+            />
+          </div>
+          <div style={{ fontSize: 10, color: "var(--text-secondary)", marginTop: "0.25rem", lineHeight: 1.4 }}>Total years of experience</div>
+        </div>
+
+        {/* Clear button — vertically aligned with inputs */}
+        <div style={{ flex: "0 0 auto", paddingTop: "1.4rem" }}>
+          {(skillsInput || roleInput || expMin || expMax) ? (
+            <button
+              className="btn btn-ghost btn-sm"
+              style={{ height: 34, whiteSpace: "nowrap" }}
+              onClick={() => { setSkillsInput(""); setRoleInput(""); setExpMin(""); setExpMax(""); }}
+            >Clear filters</button>
+          ) : (
+            <div style={{ height: 34 }} />
           )}
-          <button className="btn btn-ghost" onClick={() => void refreshAll()}>Refresh</button>
         </div>
       </div>
 
@@ -422,7 +492,12 @@ export default function TalentPool() {
         <div style={{ marginBottom: "1rem", padding: "12px 16px", background: "color-mix(in srgb, var(--warning, #f59e0b) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--warning, #f59e0b) 30%, transparent)", borderRadius: "10px", fontSize: "13px" }}>
           <div style={{ fontWeight: 600, marginBottom: "6px" }}>{skippedFiles.length} duplicate{skippedFiles.length > 1 ? "s" : ""} skipped — already in pool:</div>
           <ul style={{ margin: 0, paddingLeft: "18px", display: "flex", flexDirection: "column", gap: "3px" }}>
-            {skippedFiles.map((f, i) => <li key={i} style={{ color: "var(--text-secondary)" }}>{f}</li>)}
+            {skippedFiles.map((f, i) => (
+              <li key={i} style={{ color: "var(--text-secondary)" }}>
+                <span style={{ fontWeight: 500 }}>{f.filename}</span>
+                {f.message && <span style={{ color: "var(--text-tertiary, #9ca3af)", marginLeft: 6 }}>— {f.message}</span>}
+              </li>
+            ))}
           </ul>
         </div>
       )}
