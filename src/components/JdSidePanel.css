@@ -1,0 +1,188 @@
+.jd-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    height: 100vh;
+    width: min(520px, 100vw);
+    background: var(--bg-card, var(--bg-primary));
+    border-left: 1px solid var(--border-subtle);
+    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.10);
+    display: flex;
+    flex-direction: column;
+    transform: translateX(100%);
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 60;
+}
+
+.jd-panel--open {
+    transform: translateX(0);
+}
+
+.jd-panel-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border-subtle);
+    background: var(--bg-primary);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.jd-panel-header-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.jd-panel-header-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.jd-panel-title {
+    margin: 0.35rem 0 0;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.3;
+    word-break: break-word;
+}
+
+.jd-panel-close {
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+}
+
+.jd-panel-close:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.jd-panel-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.jd-panel-section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    padding: 0.9rem 1rem;
+}
+
+.jd-panel-section-title {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.65rem;
+    letter-spacing: 0.02em;
+}
+
+.jd-panel-subgroup {
+    margin-top: 0.5rem;
+}
+
+.jd-panel-subgroup:first-child {
+    margin-top: 0;
+}
+
+.jd-panel-subtitle {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-bottom: 0.35rem;
+    font-weight: 600;
+}
+
+.jd-panel-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.65rem 1rem;
+}
+
+.jd-panel-field-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-bottom: 0.15rem;
+    font-weight: 600;
+}
+
+.jd-panel-field-value {
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+    word-break: break-word;
+}
+
+.jd-panel-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.jd-panel-text {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    margin: 0;
+    line-height: 1.55;
+}
+
+.jd-panel-muted {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.jd-panel-jd {
+    margin: 0;
+    padding: 0.75rem 0.85rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    font-family: var(--font-family);
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: none;
+    overflow: visible;
+}
+
+/* When the JD panel is open, give the page content room on the right
+   so users can still see and interact with the page they're on. */
+.layout--jd-open .main-area {
+    padding-right: min(520px, 100vw);
+    transition: padding-right 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (max-width: 900px) {
+    .jd-panel {
+        width: 100vw;
+    }
+    .layout--jd-open .main-area {
+        padding-right: 0;
+    }
+}
