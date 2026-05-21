@@ -245,15 +245,6 @@ export default function RequirementCreate() {
         setActiveSkill(null);
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const clearSkillPreference = (skill: string) => {
-        setSkillPreferences((prev) => {
-            const next = { ...prev };
-            delete next[skill];
-            return next;
-        });
-        setActiveSkill(null);
-    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();

@@ -376,8 +376,6 @@ export default function RequirementDetail() {
         SELECTED: applications.filter((a) => a.status === "SELECTED").length,
         REJECTED: applications.filter((a) => a.status === "REJECTED").length,
     };
-    const allSkills = req.all_skills || [];
-    const _hasSkillData = allSkills.length > 0;
 
     const renderSla = () => {
         const status = req.sla_status || "ON_TRACK";

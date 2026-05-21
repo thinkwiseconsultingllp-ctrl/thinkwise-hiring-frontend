@@ -79,7 +79,8 @@ export type BoolNode =
 
 class Parser {
     private pos = 0;
-    constructor(private readonly toks: Tok[]) {}
+    private readonly toks: Tok[];
+    constructor(toks: Tok[]) { this.toks = toks; }
 
     private peek() { return this.toks[this.pos]; }
     private consume() { return this.toks[this.pos++]; }
@@ -151,6 +152,8 @@ function match(node: BoolNode, text: string): boolean {
         case "NOT":    return !match(node.operand, text);
     }
 }
+
+// ── Public API ─────────────────────────────────────────────────────────────
 
 export function parseBooleanQuery(query: string): BoolNode | null {
     if (!query.trim()) return null;
