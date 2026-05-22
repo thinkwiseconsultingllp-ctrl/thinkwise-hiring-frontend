@@ -28,7 +28,7 @@ export default function RequirementList() {
     const [statusFilter, setStatusFilter] = useState("ALL");
 
     useEffect(() => {
-        api.get("/requirements/")
+        api.get("/requirements")
             .then((data) => setRequirements(data || []))
             .catch(() => {})
             .finally(() => setLoading(false));

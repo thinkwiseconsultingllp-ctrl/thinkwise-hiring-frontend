@@ -78,7 +78,7 @@ export default function TalentPool() {
 
   const loadCandidates = async () => {
     try {
-      const data = await api.get("/candidates/");
+      const data = await api.get("/candidates");
       setCandidates(data || []);
     } catch {
       // silent refresh during upload
@@ -91,7 +91,7 @@ export default function TalentPool() {
     setLoading(true);
     const timeout = setTimeout(() => setLoading(false), 8000);
     try {
-      const data = await api.get("/candidates/");
+      const data = await api.get("/candidates");
       setCandidates(data || []);
     } catch (err: any) {
       setError(err.detail || "Failed to load talent pool");
@@ -278,7 +278,7 @@ export default function TalentPool() {
     setSendResult(null);
     setSendReqId("");
     try {
-      const reqs: Requirement[] = await api.get("/requirements/");
+      const reqs: Requirement[] = await api.get("/requirements");
       const mine = isAdmin
         ? reqs.filter(r => !["DELETED", "CLOSED"].includes((r as any).status))
         : reqs.filter(r =>

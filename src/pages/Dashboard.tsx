@@ -323,7 +323,7 @@ export default function Dashboard() {
     useEffect(() => {
         const fetchAll = async () => {
             try {
-                const reqs = await api.get("/requirements/");
+                const reqs = await api.get("/requirements");
                 setRequirements(reqs || []);
             } catch { /* silent */ } finally {
                 setLoading(false);

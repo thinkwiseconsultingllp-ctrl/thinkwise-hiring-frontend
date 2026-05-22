@@ -148,18 +148,17 @@ export default function RequirementDetail() {
     useEffect(() => {
         if (!id) return;
         setLoading(true);
-        Promise.all([
-            api.get(`/requirements/${id}`),
-            api.get(`/applications?requirement_id=${id}`),
-        ])
-            .then(([reqData, appData]) => {
-                setReq(reqData);
+        api.get(`/requirements/${id}`)
+            .then((reqData) => setReq(reqData))
+            .catch(() => { })
+            .finally(() => setLoading(false));
+        api.get(`/applications?requirement_id=${id}`)
+            .then((appData) => {
                 const apps = appData || [];
                 setApplications(apps);
                 if (apps.length === 0) setMainTab("profiles");
             })
-            .catch(() => { })
-            .finally(() => setLoading(false));
+            .catch(() => { });
     }, [id]);
 
     // Keep the open JD panel in sync if it's showing this requirement

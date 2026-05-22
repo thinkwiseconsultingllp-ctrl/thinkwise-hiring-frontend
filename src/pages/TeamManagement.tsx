@@ -44,7 +44,7 @@ export default function TeamManagement() {
 
     const fetchUsers = async () => {
         try {
-            const data = await api.get("/users/");
+            const data = await api.get("/users");
             const sorted = data.sort((a: User, b: User) => {
                 if (a.is_super_admin === b.is_super_admin) return 0;
                 return a.is_super_admin ? -1 : 1;

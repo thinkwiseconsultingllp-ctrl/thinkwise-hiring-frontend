@@ -1,15 +1,3 @@
-/**
- * Boolean search parser and evaluator.
- * Supports: AND, OR, NOT, -term, "exact phrase", (grouping)
- * Implicit AND between adjacent terms: "Java Spring" = "Java AND Spring"
- *
- * Examples:
- *   Java AND Spring
- *   React OR Angular
- *   NOT Junior  /  -junior
- *   "machine learning" Python
- *   (React OR Vue) AND TypeScript NOT Junior
- */
 
 // ── Tokens ─────────────────────────────────────────────────────────────────
 
@@ -51,7 +39,7 @@ function tokenize(input: string): Tok[] {
 
         const up = word.toUpperCase();
         if (up === "AND") { tokens.push({ type: "AND" }); continue; }
-        if (up === "OR")  { tokens.push({ type: "OR"  }); continue; }
+        if (up === "OR") { tokens.push({ type: "OR" }); continue; }
         if (up === "NOT") { tokens.push({ type: "NOT" }); continue; }
         tokens.push({ type: "WORD", value: word.toLowerCase() });
     }
@@ -63,11 +51,11 @@ function tokenize(input: string): Tok[] {
 // ── AST ────────────────────────────────────────────────────────────────────
 
 export type BoolNode =
-    | { op: "TERM";   value: string }
+    | { op: "TERM"; value: string }
     | { op: "PHRASE"; value: string }
-    | { op: "AND";    left: BoolNode; right: BoolNode }
-    | { op: "OR";     left: BoolNode; right: BoolNode }
-    | { op: "NOT";    operand: BoolNode };
+    | { op: "AND"; left: BoolNode; right: BoolNode }
+    | { op: "OR"; left: BoolNode; right: BoolNode }
+    | { op: "NOT"; operand: BoolNode };
 
 // ── Parser ─────────────────────────────────────────────────────────────────
 // Grammar:
@@ -135,7 +123,7 @@ class Parser {
             return inner;
         }
         if (tok.type === "PHRASE") { this.consume(); return { op: "PHRASE", value: tok.value! }; }
-        if (tok.type === "WORD")   { this.consume(); return { op: "TERM",   value: tok.value! }; }
+        if (tok.type === "WORD") { this.consume(); return { op: "TERM", value: tok.value! }; }
         this.consume();
         return { op: "TERM", value: "" };
     }
@@ -145,11 +133,11 @@ class Parser {
 
 function match(node: BoolNode, text: string): boolean {
     switch (node.op) {
-        case "TERM":   return node.value === "" || text.includes(node.value);
+        case "TERM": return node.value === "" || text.includes(node.value);
         case "PHRASE": return text.includes(node.value);
-        case "AND":    return match(node.left, text) && match(node.right, text);
-        case "OR":     return match(node.left, text) || match(node.right, text);
-        case "NOT":    return !match(node.operand, text);
+        case "AND": return match(node.left, text) && match(node.right, text);
+        case "OR": return match(node.left, text) || match(node.right, text);
+        case "NOT": return !match(node.operand, text);
     }
 }
 

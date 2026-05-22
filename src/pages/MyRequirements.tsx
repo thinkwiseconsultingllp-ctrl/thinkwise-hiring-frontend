@@ -34,7 +34,7 @@ export default function MyRequirements() {
         const fetchAll = async () => {
             try {
                 const [reqs, counts] = await Promise.all([
-                    api.get("/requirements/"),
+                    api.get("/requirements"),
                     api.get("/applications/counts"),
                 ]);
                 const uid = user?.id || "";
