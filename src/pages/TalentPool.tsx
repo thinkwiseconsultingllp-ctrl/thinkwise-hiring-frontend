@@ -300,7 +300,7 @@ export default function TalentPool() {
       const res = await api.post(`/requirements/${sendReqId}/profiles/add-from-pool`, {
         candidate_ids: selectedCandidateIds,
       });
-      setSendResult(`${res.submitted} of ${res.total} profile${res.total !== 1 ? "s" : ""} submitted successfully.`);
+      setSendResult(`${res.added} of ${res.total} profile${res.total !== 1 ? "s" : ""} added to the Profiles tab successfully.`);
       setSelectedCandidateIds([]);
       setTimeout(() => setSendModal(false), 1800);
     } catch (err: any) {
@@ -660,7 +660,7 @@ export default function TalentPool() {
           <div className="modal-box" style={{ maxWidth: "480px" }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-title">Send to Requirement</div>
             <p className="text-sm" style={{ margin: "0.5rem 0 1rem", color: "var(--text-secondary)" }}>
-              {selectedCandidateIds.length} candidate{selectedCandidateIds.length !== 1 ? "s" : ""} will be scored and submitted to the selected requirement.
+              {selectedCandidateIds.length} candidate{selectedCandidateIds.length !== 1 ? "s" : ""} will be scored and added to the Profiles tab for review before submission.
             </p>
             {requirements.length === 0 ? (
               <div className="text-sm" style={{ color: "var(--text-secondary)", marginBottom: "1rem" }}>

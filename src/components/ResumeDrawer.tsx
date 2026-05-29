@@ -63,6 +63,11 @@ export default function ResumeDrawer({ candidateId, candidateName }: ResumeDrawe
     const isPdf = mime.includes("pdf");
 
     return (
+        <>
+        <div
+            onClick={drawer.close}
+            style={{ position: "fixed", inset: 0, zIndex: 999, background: "rgba(0,0,0,0.18)" }}
+        />
         <aside
             style={{
                 position: "fixed", top: 0, right: 0, bottom: 0,
@@ -119,5 +124,6 @@ export default function ResumeDrawer({ candidateId, candidateName }: ResumeDrawe
                 )}
             </div>
         </aside>
+        </>
     );
 }

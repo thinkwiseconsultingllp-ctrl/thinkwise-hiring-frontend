@@ -1,8 +1,75 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../services/api";
 import Icon from "../components/Icon";
 import "../styles/pages.css";
+
+function ClientCombobox({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+    const [clients, setClients] = useState<string[]>([]);
+    const [open, setOpen] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        api.get("/requirements")
+            .then((reqs: any[]) => {
+                const names = [...new Set((reqs || []).map((r: any) => r.company_name).filter(Boolean))].sort() as string[];
+                setClients(names);
+            })
+            .catch(() => { });
+    }, []);
+
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+        };
+        document.addEventListener("mousedown", handler);
+        return () => document.removeEventListener("mousedown", handler);
+    }, []);
+
+    const filtered = value
+        ? clients.filter(c => c.toLowerCase().includes(value.toLowerCase()))
+        : clients;
+
+    return (
+        <div ref={ref} style={{ position: "relative" }}>
+            <input
+                type="text"
+                placeholder="e.g. Google"
+                value={value}
+                required
+                autoComplete="off"
+                onFocus={() => setOpen(true)}
+                onChange={e => { onChange(e.target.value); setOpen(true); }}
+                style={{ width: "100%" }}
+            />
+            {open && filtered.length > 0 && (
+                <div style={{
+                    position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100,
+                    background: "var(--bg-card)", border: "1px solid var(--border-subtle)",
+                    borderRadius: "var(--radius-sm)", boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+                    maxHeight: 220, overflowY: "auto", marginTop: 2,
+                }}>
+                    {filtered.map(c => (
+                        <div
+                            key={c}
+                            onMouseDown={e => { e.preventDefault(); onChange(c); setOpen(false); }}
+                            style={{
+                                padding: "0.5rem 0.85rem", fontSize: 13, cursor: "pointer",
+                                color: c === value ? "var(--primary)" : "var(--text-primary)",
+                                fontWeight: c === value ? 600 : 400,
+                                background: "transparent",
+                            }}
+                            onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-secondary)")}
+                            onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                        >
+                            {c}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
 
 const REQUIREMENT_TYPE_SUGGESTIONS = [
     { label: "Full Time", value: "FULL_TIME" },
@@ -123,6 +190,7 @@ const SKILL_PREFERENCE_HEADER = "Skill Preferences:";
 
 export default function RequirementCreate() {
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
     const [parsingJd, setParsingJd] = useState(false);
@@ -130,9 +198,13 @@ export default function RequirementCreate() {
     const [parsedJd, setParsedJd] = useState<ParsedJdPreview | null>(null);
     const [activeSkill, setActiveSkill] = useState<string | null>(null);
     const [skillPreferences, setSkillPreferences] = useState<Record<string, string>>({});
-    const [form, setForm] = useState(INITIAL_FORM);
+    const [form, setForm] = useState(() => ({
+        ...INITIAL_FORM,
+        company_name: searchParams.get("client") || "",
+    }));
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [showPreview, setShowPreview] = useState(false);
+    const [editingSpecialInstructions, setEditingSpecialInstructions] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
@@ -270,7 +342,8 @@ export default function RequirementCreate() {
                 if (parsedJd?.all_skills?.length) {
                     payload.append("all_skills_json", JSON.stringify(parsedJd.all_skills));
                 }
-                await api.post("/requirements/from-file", payload);
+                const created = await api.post("/requirements/from-file", payload);
+                navigate(`/requirements/${created.id}`);
             } else {
                 const payload = {
                     ...form,
@@ -286,10 +359,9 @@ export default function RequirementCreate() {
                     max_years_experience: form.max_years_experience || null,
                     mode_of_work: form.mode_of_work || null,
                 };
-                await api.post("/requirements", payload);
+                const created = await api.post("/requirements", payload);
+                navigate(`/requirements/${created.id}`);
             }
-
-            navigate("/dashboard");
         } catch (err: any) {
             setError(err.detail || "Failed to create requirement");
         } finally {
@@ -299,6 +371,13 @@ export default function RequirementCreate() {
 
     return (
         <div className="requirement-create-page">
+            <button
+                className="btn btn-ghost"
+                onClick={() => navigate(-1)}
+                style={{ marginBottom: "0.75rem", fontSize: 13, display: "inline-flex", alignItems: "center", gap: "0.3rem" }}
+            >
+                ← Back
+            </button>
             <div className="page-header">
                 <div>
                     <h1>Create Requirement</h1>
@@ -408,12 +487,9 @@ export default function RequirementCreate() {
                     <div className="form-row">
                         <div className="form-group">
                             <label>Company Name *</label>
-                            <input
-                                type="text"
-                                placeholder="e.g. Google"
+                            <ClientCombobox
                                 value={form.company_name}
-                                onChange={(e) => update("company_name", e.target.value)}
-                                required
+                                onChange={(v) => update("company_name", v)}
                             />
                         </div>
                         <div className="form-group">
@@ -567,15 +643,64 @@ export default function RequirementCreate() {
                     </div>
 
                     <div className="form-group">
-                        <label>Special Instructions</label>
-                        <textarea
-                            placeholder="Any special notes for recruiters..."
-                            value={specialInstructionsValue}
-                            onChange={(e) =>
-                                update("special_instructions", extractManualInstructions(e.target.value))
-                            }
-                            rows={5}
-                        />
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.4rem" }}>
+                            <label style={{ margin: 0 }}>Special Instructions</label>
+                            {!editingSpecialInstructions ? (
+                                <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    style={{ fontSize: 12, padding: "2px 10px" }}
+                                    onClick={() => setEditingSpecialInstructions(true)}
+                                >
+                                    <Icon name="edit" size={13} /> Edit
+                                </button>
+                            ) : (
+                                <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    style={{ fontSize: 12, padding: "2px 10px", color: "var(--accent)" }}
+                                    onClick={() => setEditingSpecialInstructions(false)}
+                                >
+                                    Done
+                                </button>
+                            )}
+                        </div>
+                        {editingSpecialInstructions ? (
+                            <textarea
+                                placeholder="Any special notes for recruiters..."
+                                value={specialInstructionsValue}
+                                onChange={(e) =>
+                                    update("special_instructions", extractManualInstructions(e.target.value))
+                                }
+                                rows={5}
+                                autoFocus
+                            />
+                        ) : specialInstructionsValue ? (
+                            <div
+                                style={{
+                                    padding: "0.6rem 0.85rem", fontSize: 13,
+                                    border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)",
+                                    background: "var(--bg-secondary)", whiteSpace: "pre-wrap",
+                                    color: "var(--text-primary)", cursor: "pointer", minHeight: 60,
+                                }}
+                                onClick={() => setEditingSpecialInstructions(true)}
+                                title="Click to edit"
+                            >
+                                {specialInstructionsValue}
+                            </div>
+                        ) : (
+                            <div
+                                style={{
+                                    padding: "0.6rem 0.85rem", fontSize: 13,
+                                    border: "1px dashed var(--border-subtle)", borderRadius: "var(--radius-sm)",
+                                    color: "var(--text-muted)", cursor: "pointer", minHeight: 60,
+                                    display: "flex", alignItems: "center",
+                                }}
+                                onClick={() => setEditingSpecialInstructions(true)}
+                            >
+                                Click to add special instructions for recruiters…
+                            </div>
+                        )}
                     </div>
 
                     <div className="form-actions">

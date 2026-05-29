@@ -154,6 +154,12 @@ function DashboardLayoutInner() {
                                     {!collapsed && <span>My Requirements</span>}
                                 </NavLink>
                             )}
+                            {!isAdmin && (
+                                <NavLink to="/my-submissions" className="nav-item" onClick={closeMobile}>
+                                    <span className="nav-icon"><Icon name="send" size={16} /></span>
+                                    {!collapsed && <span>My Submissions</span>}
+                                </NavLink>
+                            )}
                         </div>
                     )}
 
@@ -180,24 +186,20 @@ function DashboardLayoutInner() {
                                 <span className="nav-icon"><Icon name="send" size={16} /></span>
                                 {!collapsed && <span>{isAdmin ? "Assignment Requests" : "My Requests"}</span>}
                             </NavLink>
+                            <NavLink to="/analytics" className="nav-item" onClick={closeMobile}>
+                                <span className="nav-icon"><Icon name="chart" size={16} /></span>
+                                {!collapsed && <span>Analytics</span>}
+                            </NavLink>
                         </div>
                     )}
 
-                    {isAdmin && (
+                    {isAdmin && isSuperAdmin && (
                         <div className="nav-section">
                             {!collapsed && <span className="nav-label">Admin</span>}
-                            {isSuperAdmin && (
-                                <NavLink to="/team" className="nav-item" onClick={closeMobile}>
-                                    <span className="nav-icon"><Icon name="team" size={16} /></span>
-                                    {!collapsed && <span>Team</span>}
-                                </NavLink>
-                            )}
-                            {!isSuperAdmin && (
-                                <NavLink to="/analytics" className="nav-item" onClick={closeMobile}>
-                                    <span className="nav-icon"><Icon name="chart" size={16} /></span>
-                                    {!collapsed && <span>Analytics</span>}
-                                </NavLink>
-                            )}
+                            <NavLink to="/team" className="nav-item" onClick={closeMobile}>
+                                <span className="nav-icon"><Icon name="team" size={16} /></span>
+                                {!collapsed && <span>Team</span>}
+                            </NavLink>
                         </div>
                     )}
                 </nav>

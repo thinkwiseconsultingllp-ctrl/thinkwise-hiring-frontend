@@ -22,7 +22,7 @@ export default function Login() {
         setLoading(true);
         try {
             const res = await api.post("/auth/login", { email: email.trim().toLowerCase(), password });
-            await login(res.access_token);
+            await login(res.access_token, res.refresh_token);
             navigate("/dashboard");
         } catch (err: any) {
             setError(err.detail || "Invalid email or password.");

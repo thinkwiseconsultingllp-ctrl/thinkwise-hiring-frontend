@@ -62,7 +62,7 @@ export default function SubmitCandidate() {
         }
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    const handleSubmit = async (e: { preventDefault(): void }) => {
         e.preventDefault();
         setError("");
         setLoading(true);
@@ -123,6 +123,13 @@ export default function SubmitCandidate() {
 
     return (
         <div>
+            <button
+                className="btn btn-ghost"
+                onClick={() => navigate(-1)}
+                style={{ marginBottom: "0.75rem", fontSize: 13, display: "inline-flex", alignItems: "center", gap: "0.3rem" }}
+            >
+                ← Back
+            </button>
             <div className="page-header">
                 <div>
                     <h1>Submit Candidate</h1>

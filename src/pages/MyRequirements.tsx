@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../services/api";
 import StatusBadge from "../components/StatusBadge";
+import { useQuery } from "@tanstack/react-query";
 import "../styles/pages.css";
 
 interface Requirement {
@@ -24,31 +25,23 @@ interface Requirement {
 export default function MyRequirements() {
     const { user } = useAuth();
     const navigate = useNavigate();
-    const [requirements, setRequirements] = useState<Requirement[]>([]);
-    const [submissionCounts, setSubmissionCounts] = useState<Record<string, number>>({});
-    const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState("");
     const [statusFilter, setStatusFilter] = useState("ALL");
 
-    useEffect(() => {
-        const fetchAll = async () => {
-            try {
-                const [reqs, counts] = await Promise.all([
-                    api.get("/requirements"),
-                    api.get("/applications/counts"),
-                ]);
-                const uid = user?.id || "";
-                const assigned = (reqs || []).filter((r: Requirement) =>
-                    r.assigned_recruiters?.includes(uid)
-                );
-                setRequirements(assigned);
-                setSubmissionCounts(counts || {});
-            } catch { /* silent */ } finally {
-                setLoading(false);
-            }
-        };
-        void fetchAll();
-    }, [user]);
+    const { data: allReqs = [], isLoading: loadingReqs } = useQuery({
+        queryKey: ["requirements"],
+        queryFn: () => api.get("/requirements").then((r: any) => r || []),
+    });
+
+    const { data: submissionCounts = {} } = useQuery<Record<string, number>>({
+        queryKey: ["application-counts"],
+        queryFn: () => api.get("/applications/counts").then((r: any) => r || {}),
+    });
+
+    const requirements: Requirement[] = allReqs.filter((r: Requirement) =>
+        r.assigned_recruiters?.includes(user?.id || "")
+    );
+    const loading = loadingReqs;
 
     const filtered = requirements.filter(r => {
         const matchesStatus = statusFilter === "ALL" || r.status === statusFilter;
@@ -144,7 +137,11 @@ export default function MyRequirements() {
                             </thead>
                             <tbody>
                                 {filtered.map(req => (
-                                    <tr key={req.id}>
+                                    <tr
+                                        key={req.id}
+                                        onClick={(e) => { if (e.ctrlKey || e.metaKey) { window.open(`/requirements/${req.id}`, '_blank'); } else { navigate(`/requirements/${req.id}`); } }}
+                                        style={{ cursor: "pointer" }}
+                                    >
                                         <td className="font-mono text-accent">{req.req_id}</td>
                                         <td><strong>{req.requirement_name}</strong></td>
                                         <td>{req.requirement_type || "-"}</td>
@@ -156,7 +153,7 @@ export default function MyRequirements() {
                                                 <span
                                                     className="text-accent"
                                                     style={{ cursor: "pointer", fontSize: "12px" }}
-                                                    onClick={() => navigate(`/requirements/${req.id}`)}
+                                                    onClick={(e) => { e.stopPropagation(); navigate(`/requirements/${req.id}`); }}
                                                 >
                                                     ⚡View fits
                                                 </span>
@@ -173,13 +170,10 @@ export default function MyRequirements() {
                                         </td>
                                         <td><StatusBadge status={req.status} /></td>
                                         <td className="text-muted text-sm">{new Date(req.created_at).toLocaleDateString()}</td>
-                                        <td>
-                                            <button
-                                                className="btn btn-ghost btn-sm"
-                                                onClick={() => navigate(`/requirements/${req.id}`)}
-                                            >
-                                                View
-                                            </button>
+                                        <td onClick={e => e.stopPropagation()} style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                                            <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/requirements/${req.id}`)}>View</button>
+                                            <a href={`/requirements/${req.id}`} target="_blank" rel="noreferrer" title="Open in new tab"
+                                                style={{ fontSize: 14, color: "var(--text-muted)", textDecoration: "none", padding: "2px 4px" }}>↗</a>
                                         </td>
                                     </tr>
                                 ))}

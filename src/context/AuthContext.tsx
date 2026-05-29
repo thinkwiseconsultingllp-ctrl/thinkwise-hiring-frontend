@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
-import { apiFetch } from "../services/api";
+import { apiFetch, setTokens, clearTokens } from "../services/api";
 
 interface User {
     id: string;
@@ -11,7 +11,7 @@ interface User {
 
 interface AuthContextType {
     user: User | null;
-    login: (token: string) => Promise<void>;
+    login: (accessToken: string, refreshToken: string) => Promise<void>;
     logout: () => void;
     isAdmin: boolean;
     isRecruiter: boolean;
@@ -30,7 +30,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             const profile = await apiFetch("/auth/me");
             setUser(profile);
         } catch {
-            localStorage.removeItem("token");
+            clearTokens();
             setUser(null);
         }
     }, []);
@@ -43,13 +43,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
     }, [loadProfile]);
 
-    const login = async (token: string) => {
-        localStorage.setItem("token", token);
+    const login = async (accessToken: string, refreshToken: string) => {
+        setTokens(accessToken, refreshToken);
         await loadProfile();
     };
 
     const logout = () => {
-        localStorage.removeItem("token");
+        clearTokens();
         setUser(null);
     };
 

@@ -1,11 +1,110 @@
-import { useEffect, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../services/api";
 import StatusBadge from "../components/StatusBadge";
 import ModernDropdown from "../components/ModernDropdown";
 import Icon from "../components/Icon";
+import { useQuery } from "@tanstack/react-query";
 import "../styles/pages.css";
+
+interface Notification {
+    id: string;
+    kind: string;
+    title: string;
+    subtitle: string;
+    context: string;
+    context_id?: string;
+    requirement_id?: string | null;
+    candidate_id?: string | null;
+    status?: string | null;
+    occurred_at?: string | null;
+}
+
+const NOTIF_KIND_ICON: Record<string, string> = {
+    requirement_created: "📋",
+    requirement_assigned: "✅",
+    application: "👤",
+    assignment_request: "🔔",
+    assignment_decision: "📩",
+};
+
+const APP_STATUS_COLOR: Record<string, string> = {
+    SELECTED: "#16a34a",
+    REJECTED: "#dc2626",
+    L1_SELECTED: "#2563eb",
+    L2_SELECTED: "#7c3aed",
+    HR_ROUND: "#d97706",
+    SENT: "var(--text-muted)",
+};
+
+function NotificationsFeed({ navigate }: { navigate: (path: string) => void }) {
+    const { data: notifs = [], isLoading } = useQuery<Notification[]>({
+        queryKey: ["notifications"],
+        queryFn: () => api.get("/notifications").then((r: any) => r || []),
+        staleTime: 30_000,
+    });
+
+    if (isLoading) return null;
+    if (notifs.length === 0) return null;
+
+    return (
+        <div style={{ marginTop: "2rem" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: "0.75rem" }}>
+                Activity Feed
+            </div>
+            <div style={{
+                background: "var(--bg-card)",
+                border: "1px solid var(--border-subtle)",
+                borderRadius: "12px",
+                overflow: "hidden",
+            }}>
+                {notifs.slice(0, 15).map((n, idx) => {
+                    const isLast = idx === Math.min(notifs.length, 15) - 1;
+                    const dot = NOTIF_KIND_ICON[n.kind] || "🔔";
+                    const timeStr = n.occurred_at ? new Date(n.occurred_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+                    const statusColor = n.kind === "application" && n.status ? (APP_STATUS_COLOR[n.status] || "var(--text-secondary)") : undefined;
+
+                    const handleClick = () => {
+                        if (n.requirement_id) navigate(`/requirements/${n.requirement_id}`);
+                    };
+
+                    return (
+                        <div
+                            key={n.id}
+                            onClick={n.requirement_id ? handleClick : undefined}
+                            style={{
+                                display: "flex", alignItems: "flex-start", gap: "12px",
+                                padding: "12px 16px",
+                                borderBottom: isLast ? "none" : "1px solid var(--border-subtle)",
+                                cursor: n.requirement_id ? "pointer" : "default",
+                                transition: "background 0.15s",
+                            }}
+                            onMouseEnter={e => { if (n.requirement_id) (e.currentTarget as HTMLDivElement).style.background = "var(--bg-secondary)"; }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = ""; }}
+                        >
+                            <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>{dot}</span>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: "flex", alignItems: "baseline", gap: "6px", flexWrap: "wrap" }}>
+                                    <span style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>{n.title}</span>
+                                    <span style={{ fontSize: 12, color: statusColor || "var(--text-secondary)" }}>{n.subtitle}</span>
+                                </div>
+                                {n.context && (
+                                    <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                        {n.context}
+                                    </div>
+                                )}
+                            </div>
+                            {timeStr && (
+                                <span style={{ fontSize: 11, color: "var(--text-muted)", flexShrink: 0, whiteSpace: "nowrap", marginTop: 2 }}>{timeStr}</span>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
 interface Requirement {
     id: string;
     req_id: string;
@@ -206,11 +305,9 @@ function RequirementCard({
             flexDirection: "column",
             gap: "14px",
             transition: "box-shadow 0.18s, transform 0.18s",
-            cursor: isAssigned ? "pointer" : "default",
+            cursor: "pointer",
         }}
-            onClick={() => {
-                if (isAssigned) onNavigate(req.id);
-            }}
+            onClick={() => onNavigate(req.id)}
             onMouseEnter={e => {
                 (e.currentTarget as HTMLDivElement).style.boxShadow = "0 6px 24px rgba(0,0,0,0.10)";
                 (e.currentTarget as HTMLDivElement).style.transform = "translateY(-2px)";
@@ -265,6 +362,14 @@ function RequirementCard({
                 >
                     View Details
                 </button>
+                <a
+                    href={`/requirements/${req.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={e => e.stopPropagation()}
+                    title="Open in new tab"
+                    style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "0 8px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)", color: "var(--text-muted)", textDecoration: "none", fontSize: 14 }}
+                >↗</a>
                 <button
                     className={isAssigned || isRequested ? "btn btn-ghost btn-sm" : "btn btn-primary btn-sm"}
                     onClick={(e) => { e.stopPropagation(); onAssign(req.id); }}
@@ -287,17 +392,106 @@ function RequirementCard({
     );
 }
 
+function RecruiterAssignmentsTable({ requirements }: { requirements: Requirement[] }) {
+    const { data: users = [] } = useQuery<any[]>({
+        queryKey: ["users"],
+        queryFn: () => api.get("/users").then((r: any) => r || []),
+    });
+
+    const recruiterMap = useMemo(() => {
+        const map = new Map<string, { name: string; reqs: Requirement[] }>();
+        for (const u of users) {
+            if (u.role === "RECRUITER" || u.role === "ADMIN") {
+                map.set(String(u.id), { name: u.name || u.email, reqs: [] });
+            }
+        }
+        for (const req of requirements) {
+            for (const uid of req.assigned_recruiters || []) {
+                const key = String(uid);
+                if (map.has(key)) map.get(key)!.reqs.push(req);
+            }
+        }
+        const entries = [...map.entries()].filter(([, v]) => v.reqs.length > 0);
+        entries.sort((a, b) => b[1].reqs.length - a[1].reqs.length);
+        return entries;
+    }, [users, requirements]);
+
+    if (recruiterMap.length === 0) return null;
+
+    return (
+        <div className="detail-section" style={{ marginBottom: "1.5rem" }}>
+            <div className="detail-section-title" style={{ marginBottom: "0.75rem" }}>Recruiter Assignments</div>
+            <div className="data-table-wrap">
+                <table className="data-table" style={{ tableLayout: "fixed", width: "100%" }}>
+                    <colgroup>
+                        <col style={{ width: "22%" }} />
+                        <col style={{ width: "58%" }} />
+                        <col style={{ width: "20%" }} />
+                    </colgroup>
+                    <thead>
+                        <tr>
+                            <th style={{ fontSize: 12 }}>Recruiter</th>
+                            <th style={{ fontSize: 12 }}>Assigned Requirements</th>
+                            <th style={{ fontSize: 12 }}>Count</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {recruiterMap.map(([uid, { name, reqs }]) => (
+                            <tr key={uid}>
+                                <td style={{ fontWeight: 600, fontSize: 13 }}>{name}</td>
+                                <td>
+                                    <div style={{ display: "flex", flexWrap: "wrap", gap: "0.3rem" }}>
+                                        {reqs.slice(0, 5).map(r => (
+                                            <span key={r.id} style={{ fontSize: 11, padding: "2px 7px", borderRadius: 4, background: "var(--bg-secondary)", border: "1px solid var(--border-subtle)", color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
+                                                {r.req_id} · {r.requirement_name}
+                                            </span>
+                                        ))}
+                                        {reqs.length > 5 && (
+                                            <span style={{ fontSize: 11, color: "var(--text-muted)", alignSelf: "center" }}>+{reqs.length - 5} more</span>
+                                        )}
+                                    </div>
+                                </td>
+                                <td style={{ fontSize: 13, fontWeight: 600, color: "var(--accent)" }}>{reqs.length}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+}
+
 export default function Dashboard() {
     const { user, isAdmin, isSuperAdmin } = useAuth();
     const navigate = useNavigate();
-    const [requirements, setRequirements] = useState<Requirement[]>([]);
-    const [loading, setLoading] = useState(true);
     const [assigning, setAssigning] = useState<string | null>(null);
-    const [requestedReqs, setRequestedReqs] = useState<Set<string>>(new Set());
+    const [optimisticRequested, setOptimisticRequested] = useState<Set<string>>(new Set());
     const [detailReq, setDetailReq] = useState<Requirement | null>(null);
-    const notice = ""; // Kept as constant string since setNotice is unused but notice is rendered in JSX
+    const notice = "";
 
     const [selectedClient, setSelectedClient] = useState<string | null>(null);
+
+    const { data: requirements = [], isLoading: loading } = useQuery<Requirement[]>({
+        queryKey: ["requirements"],
+        queryFn: () => api.get("/requirements").then((r: any) => r || []),
+    });
+
+    const { data: pendingRequestIds = [] } = useQuery<string[]>({
+        queryKey: ["assignment-requests-pending", user?.id],
+        queryFn: () =>
+            api.get("/assignment-requests?status=pending").then((reqs: any[]) =>
+                (reqs || [])
+                    .filter((r: any) => r.recruiter_id === user?.id)
+                    .map((r: any) => r.requirement_id)
+            ),
+        enabled: !isAdmin && !!user?.id,
+    });
+
+    // Merge server-known pending with optimistic additions from this session
+    const requestedReqs = useMemo(
+        () => new Set([...pendingRequestIds, ...optimisticRequested]),
+        [pendingRequestIds, optimisticRequested],
+    );
 
     const clientsMap = useMemo(() => {
         const map = new Map<string, Requirement[]>();
@@ -320,36 +514,11 @@ export default function Dashboard() {
     const [cardSearch, setCardSearch] = useState("");
     const [cardStatus, setCardStatus] = useState("ALL");
 
-    useEffect(() => {
-        const fetchAll = async () => {
-            try {
-                const reqs = await api.get("/requirements");
-                setRequirements(reqs || []);
-            } catch { /* silent */ } finally {
-                setLoading(false);
-            }
-        };
-        const fetchRequests = async () => {
-            if (isAdmin) return;
-            try {
-                const reqs = await api.get("/assignment-requests?status=pending");
-                const ids = (reqs || []).filter((r: any) => r.recruiter_id === user?.id).map((r: any) => r.requirement_id);
-                setRequestedReqs(new Set(ids));
-            } catch { /* silent */ }
-        };
-        void fetchAll();
-        void fetchRequests();
-    }, [isAdmin, user?.id]);
-
     const handleAssign = async (id: string) => {
         setAssigning(id);
         try {
             await api.post(`/requirements/${id}/assignment-requests`, { message: "Requested from Dashboard" });
-            setRequestedReqs(prev => {
-                const next = new Set(prev);
-                next.add(id);
-                return next;
-            });
+            setOptimisticRequested(prev => new Set([...prev, id]));
         } catch (e: any) {
             alert(e?.detail || e?.message || "Failed to send request");
         } finally {
@@ -361,8 +530,19 @@ export default function Dashboard() {
     const openReqs = clientRequirements.filter(r => r.status === "OPEN");
     const holdReqs = clientRequirements.filter(r => r.status === "ON_HOLD");
     const closedReqs = clientRequirements.filter(r => r.status === "CLOSED");
+    const positionClosedReqs = clientRequirements.filter(r => r.status === "POSITION_CLOSED");
+    const archivedReqs = clientRequirements.filter(r => r.status === "ARCHIVED");
     const deletedReqs = clientRequirements.filter(r => r.status === "DELETED");
     const [activeTab, setActiveTab] = useState("OPEN");
+
+    const REQ_TABS = [
+        { key: "OPEN", label: "Open", reqs: openReqs },
+        { key: "ON_HOLD", label: "On Hold", reqs: holdReqs },
+        { key: "CLOSED", label: "Closed", reqs: closedReqs },
+        { key: "POSITION_CLOSED", label: "Position Closed", reqs: positionClosedReqs },
+        { key: "ARCHIVED", label: "Archived", reqs: archivedReqs },
+        { key: "DELETED", label: "Deleted", reqs: deletedReqs },
+    ];
 
     const getFilteredReqs = (reqs: Requirement[]) => {
         if (!appliedFilter) return reqs;
@@ -377,13 +557,7 @@ export default function Dashboard() {
 
     const getAdminDisplayedReqs = () => {
         if (appliedFilter) return getFilteredReqs(clientRequirements);
-        switch (activeTab) {
-            case "OPEN": return openReqs;
-            case "ON_HOLD": return holdReqs;
-            case "CLOSED": return closedReqs;
-            case "DELETED": return deletedReqs;
-            default: return openReqs;
-        }
+        return REQ_TABS.find(t => t.key === activeTab)?.reqs ?? openReqs;
     };
 
     const uniqueValues = {
@@ -484,6 +658,8 @@ export default function Dashboard() {
                         )
                     })}
                 </div>
+
+                {!isAdmin && <NotificationsFeed navigate={navigate} />}
             </div>
         );
     };
@@ -646,27 +822,30 @@ export default function Dashboard() {
 
             {renderStatsRow(clientRequirements)}
 
+            <RecruiterAssignmentsTable requirements={clientRequirements} />
+
             <div className="detail-section">
-                <div style={{ display: "flex", gap: "1rem", marginBottom: "1rem", borderBottom: "1px solid var(--border-subtle)" }}>
-                    {["OPEN", "ON_HOLD", "CLOSED", "DELETED"].map(tab => (
+                <div style={{ display: "flex", gap: "0.25rem", marginBottom: "1rem", borderBottom: "1px solid var(--border-subtle)", flexWrap: "wrap" }}>
+                    {REQ_TABS.map(tab => (
                         <button
-                            key={tab}
-                            onClick={() => setActiveTab(tab)}
+                            key={tab.key}
+                            onClick={() => setActiveTab(tab.key)}
                             style={{
-                                padding: "0.5rem 1rem", background: "none", border: "none",
+                                padding: "0.5rem 0.85rem", background: "none", border: "none",
                                 borderBottomWidth: "2px", borderBottomStyle: "solid",
-                                borderBottomColor: activeTab === tab ? "var(--primary)" : "transparent",
-                                color: activeTab === tab ? "var(--primary)" : "var(--text-secondary)",
-                                cursor: "pointer", fontWeight: activeTab === tab ? 600 : 400,
+                                borderBottomColor: activeTab === tab.key ? "var(--primary)" : "transparent",
+                                color: activeTab === tab.key ? "var(--primary)" : "var(--text-secondary)",
+                                cursor: "pointer", fontWeight: activeTab === tab.key ? 600 : 400,
+                                fontSize: 13, whiteSpace: "nowrap",
                             }}
                         >
-                            {tab.replace("_", " ")} ({tab === "OPEN" ? openReqs.length : tab === "ON_HOLD" ? holdReqs.length : tab === "CLOSED" ? closedReqs.length : deletedReqs.length})
+                            {tab.label} ({tab.reqs.length})
                         </button>
                     ))}
                 </div>
 
                 <div className="detail-section-title">
-                    {appliedFilter ? "Search Results" : `${activeTab.replace("_", " ")} Requirements`}
+                    {appliedFilter ? "Search Results" : `${REQ_TABS.find(t => t.key === activeTab)?.label ?? activeTab} Requirements`}
                 </div>
 
                 {loading ? (
@@ -694,7 +873,7 @@ export default function Dashboard() {
                             </thead>
                             <tbody>
                                 {displayedReqs.map(req => (
-                                    <tr key={req.id}>
+                                    <tr key={req.id} onClick={(e) => { if (e.ctrlKey || e.metaKey) { window.open(`/requirements/${req.id}`, '_blank'); } else { navigate(`/requirements/${req.id}`); } }} style={{ cursor: "pointer" }}>
                                         <td className="font-mono text-accent">{req.req_id}</td>
                                         <td><strong>{req.requirement_name}</strong></td>
                                         <td>{req.requirement_type || "-"}</td>
@@ -703,10 +882,10 @@ export default function Dashboard() {
                                         <td>{renderSla(req)}</td>
                                         <td><StatusBadge status={req.status} /></td>
                                         <td className="text-muted text-sm">{new Date(req.created_at).toLocaleDateString()}</td>
-                                        <td>
-                                            <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/requirements/${req.id}`)}>
-                                                View
-                                            </button>
+                                        <td onClick={e => e.stopPropagation()} style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                                            <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/requirements/${req.id}`)}>View</button>
+                                            <a href={`/requirements/${req.id}`} target="_blank" rel="noreferrer" title="Open in new tab"
+                                                style={{ fontSize: 14, color: "var(--text-muted)", textDecoration: "none", padding: "2px 4px" }}>↗</a>
                                         </td>
                                     </tr>
                                 ))}

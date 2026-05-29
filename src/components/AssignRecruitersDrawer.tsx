@@ -79,6 +79,11 @@ export default function AssignRecruitersDrawer({
     if (!open) return null;
 
     return (
+        <>
+        <div
+            onClick={onClose}
+            style={{ position: "fixed", inset: 0, zIndex: 1099, background: "rgba(0,0,0,0.18)" }}
+        />
         <aside
             style={{
                 position: "fixed", top: 0, right: 0, bottom: 0,
@@ -165,5 +170,6 @@ export default function AssignRecruitersDrawer({
                 </button>
             </div>
         </aside>
+        </>
     );
 }

@@ -23,10 +23,12 @@ import TrackerView from "./pages/TrackerView";
 import TalentPool from "./pages/TalentPool";
 import CandidateDetail from "./pages/CandidateDetail";
 import MyRequirements from "./pages/MyRequirements";
+import MySubmissions from "./pages/MySubmissions";
 import Analytics from "./pages/Analytics";
 import TeamManagement from "./pages/TeamManagement";
 import EmailResumes from "./components/EmailResume";
 import LinkedInSearchPage from "./pages/LinkedInSearchPage";
+import TestTools from "./pages/TestTools";
 
 function App() {
   return (
@@ -70,13 +72,10 @@ function App() {
 
           {/* My Requirements (recruiter) */}
           <Route path="/my-requirements" element={<MyRequirements />} />
+          <Route path="/my-submissions" element={<MySubmissions />} />
 
-          {/* Analytics (admin only) */}
-          <Route path="/analytics" element={
-            <ProtectedRoute adminOnly>
-              <Analytics />
-            </ProtectedRoute>
-          } />
+          {/* Analytics */}
+          <Route path="/analytics" element={<Analytics />} />
 
           {/* Team Management (Super Admin only) */}
           <Route path="/team" element={
@@ -88,6 +87,11 @@ function App() {
           {/* New Email Resumes Page */}
           <Route path="/email-resumes" element={<EmailResumes />} />
           <Route path="/linkedin-search" element={<LinkedInSearchPage />} />
+          <Route path="/test-tools" element={
+            <ProtectedRoute adminOnly>
+              <TestTools />
+            </ProtectedRoute>
+          } />
 
         </Route>
 

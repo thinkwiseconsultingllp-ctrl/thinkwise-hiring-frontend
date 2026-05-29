@@ -10,6 +10,9 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
     OPEN: { label: "Open", className: "badge--open" },
     ON_HOLD: { label: "On Hold", className: "badge--hold" },
     CLOSED: { label: "Closed", className: "badge--closed" },
+    POSITION_CLOSED: { label: "Position Closed", className: "badge--position-closed" },
+    ARCHIVED: { label: "Archived", className: "badge--archived" },
+    DELETED: { label: "Deleted", className: "badge--closed" },
 };
 
 interface Props {

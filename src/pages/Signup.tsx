@@ -36,7 +36,7 @@ export default function Signup() {
                 email: email.trim().toLowerCase(),
                 password,
             });
-            await login(res.access_token);
+            await login(res.access_token, res.refresh_token);
             navigate("/dashboard");
         } catch (err: any) {
             setError(err.detail || "Something went wrong. Please try again.");

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../services/api";
 import { useSideDrawer, type ProfileAction, type ProfileViewTab } from "../context/SideDrawerContext";
+import { useAuth } from "../context/AuthContext";
 
 type Profile = any;
 
@@ -34,15 +35,34 @@ function fmtDate(value?: string | Date | null): string {
     }
 }
 
+function npColor(notice?: string | null): string {
+    if (!notice) return "var(--text-secondary)";
+    const l = notice.toLowerCase();
+    if (l.includes("immediate") || l.includes("serving") || l === "0") return "#16a34a";
+    const n = parseInt(l);
+    if (!isNaN(n)) { if (n <= 15) return "#16a34a"; if (n <= 60) return "#d97706"; return "#dc2626"; }
+    return "var(--text-secondary)";
+}
+
 function OverviewSection({ profile }: { profile: Profile }) {
     const det = profile.deterministic_scoring_analysis || {};
     const llm = profile.llm_analysis;
+    const cand = profile.candidate || {};
+    const personal = cand.PersonalDetails || {};
+    const mostRecent = (cand.Experience || [])[0] || {};
+
+    const currentRole = det.current_role || mostRecent.Position || cand.current_role || "—";
+    const currentCompany = det.current_company || mostRecent.Company || cand.current_company || "—";
+    const currentCtc = cand.current_ctc ?? cand.present_ctc;
+    const expectedCtc = cand.expected_ctc;
+    const noticePeriod = cand.notice_period || personal.NoticePeriod;
+    const reasonForChange = cand.reason_for_change;
+    const relevantExp = cand.relevant_experience;
+
     const flags = [
         ...(det.flags || []).map((f: any) => ({ source: "det", ...f, level: f.severity })),
         ...(llm?.flags || []).map((f: any) => ({ source: "llm", ...f })),
     ];
-    const comments = profile.recruiter_comments || [];
-    const recentComments = comments.slice(-2).reverse();
 
     const mustSkillResults: Array<{ skill: string; matched: boolean }> = profile.must_have_skill_results ?? [];
     const missed = mustSkillResults.filter(s => !s.matched);
@@ -61,18 +81,64 @@ function OverviewSection({ profile }: { profile: Profile }) {
         JOINED: "Joined", REJECTED: "Rejected",
     };
 
+    const Field = ({ label, value }: { label: string; value?: any }) => (
+        <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.6px", marginBottom: 3 }}>{label}</div>
+            <div style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 500, lineHeight: 1.45 }}>
+                {value ?? <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>—</span>}
+            </div>
+        </div>
+    );
+
     return (
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem", fontSize: 13 }}>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "1.2rem" }}>
-                <span><strong>Composite:</strong> <span className="font-mono">{det.display_score ?? "—"}%</span></span>
-                {llm?.overall_score != null && (
-                    <span><strong>AI Score:</strong> <span className="font-mono">{llm.overall_score}/100</span> · {llm.rating}</span>
-                )}
-                <span><strong>Sourced by:</strong> {profile.recruiter_name || "—"} · {profile.sourced_by?.source || "—"}</span>
+        <div style={{ display: "flex", flexDirection: "column", gap: "1rem", fontSize: 13 }}>
+            {/* AI Score block */}
+            {llm?.overall_score != null && (
+                <div style={{ display: "flex", alignItems: "center", gap: "1rem", padding: "0.65rem 0.9rem", background: "var(--bg-secondary)", borderRadius: 8, border: "1px solid var(--border-subtle)" }}>
+                    <div style={{ flexShrink: 0 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.6px" }}>AI Score</div>
+                        <div style={{ fontSize: 22, fontWeight: 800, color: "#2563eb", fontFamily: "monospace", lineHeight: 1.1 }}>
+                            {llm.overall_score}<span style={{ fontSize: 12, fontWeight: 400, color: "var(--text-secondary)" }}>/100</span>
+                        </div>
+                    </div>
+                    {llm.rating && <span style={{ fontSize: 12, color: "var(--text-secondary)", background: "var(--bg-primary)", padding: "2px 8px", borderRadius: 4, border: "1px solid var(--border-subtle)", flexShrink: 0 }}>{llm.rating}</span>}
+                    {llm.headline && <div style={{ fontStyle: "italic", color: "var(--text-secondary)", fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>"{llm.headline}"</div>}
+                </div>
+            )}
+
+            {/* Key submission details */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.7rem 1.5rem" }}>
+                <Field label="Current Role" value={currentRole} />
+                <Field label="Current Company" value={currentCompany} />
+                <Field label="Current CTC" value={currentCtc != null ? `${currentCtc} LPA` : undefined} />
+                <Field label="Expected CTC" value={expectedCtc != null ? `${expectedCtc} LPA` : undefined} />
+                <Field label="Notice Period" value={
+                    noticePeriod
+                        ? <span style={{ color: npColor(noticePeriod) }}>{noticePeriod}</span>
+                        : undefined
+                } />
+                <Field label="Match Score" value={det.display_score != null ? `${det.display_score}%` : undefined} />
             </div>
 
+            {/* Relevant Experience */}
+            {relevantExp && (
+                <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "0.85rem" }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.6px", marginBottom: 4 }}>Relevant Experience</div>
+                    <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.55 }}>{relevantExp}</div>
+                </div>
+            )}
+
+            {/* Reason for Change */}
+            {reasonForChange && (
+                <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "0.85rem" }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.6px", marginBottom: 4 }}>Reason for Change</div>
+                    <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.55 }}>{reasonForChange}</div>
+                </div>
+            )}
+
+            {/* Must-have skills */}
             {mustSkillResults.length > 0 && (
-                <div style={{ borderRadius: 6, border: `1px solid ${allMatched ? "#bbf7d0" : "#fecaca"}`, background: allMatched ? "rgba(22,163,74,0.06)" : "rgba(220,38,38,0.05)", padding: "0.6rem 0.75rem" }}>
+                <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "0.85rem", borderRadius: 6, border: `1px solid ${allMatched ? "#bbf7d0" : "#fecaca"}`, background: allMatched ? "rgba(22,163,74,0.06)" : "rgba(220,38,38,0.05)", padding: "0.6rem 0.75rem" }}>
                     <div style={{ fontWeight: 600, fontSize: 12, marginBottom: "0.5rem", color: allMatched ? "#16a34a" : "#dc2626" }}>
                         {allMatched
                             ? `✓ All ${mustSkillResults.length} must-have skills matched`
@@ -83,9 +149,7 @@ function OverviewSection({ profile }: { profile: Profile }) {
                             <div style={{ fontSize: 11, fontWeight: 600, color: "#dc2626", marginBottom: "0.2rem" }}>Missing</div>
                             <div style={{ display: "flex", flexWrap: "wrap", gap: "0.3rem" }}>
                                 {missed.map((s, i) => (
-                                    <span key={i} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, background: "rgba(220,38,38,0.1)", border: "1px solid #fecaca", color: "#dc2626" }}>
-                                        ✗ {s.skill}
-                                    </span>
+                                    <span key={i} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, background: "rgba(220,38,38,0.1)", border: "1px solid #fecaca", color: "#dc2626" }}>✗ {s.skill}</span>
                                 ))}
                             </div>
                         </div>
@@ -95,9 +159,7 @@ function OverviewSection({ profile }: { profile: Profile }) {
                             <div style={{ fontSize: 11, fontWeight: 600, color: "#16a34a", marginBottom: "0.2rem" }}>Matched</div>
                             <div style={{ display: "flex", flexWrap: "wrap", gap: "0.3rem" }}>
                                 {matched.map((s, i) => (
-                                    <span key={i} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, background: "rgba(22,163,74,0.1)", border: "1px solid #bbf7d0", color: "#16a34a" }}>
-                                        ✓ {s.skill}
-                                    </span>
+                                    <span key={i} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, background: "rgba(22,163,74,0.1)", border: "1px solid #bbf7d0", color: "#16a34a" }}>✓ {s.skill}</span>
                                 ))}
                             </div>
                         </div>
@@ -105,23 +167,26 @@ function OverviewSection({ profile }: { profile: Profile }) {
                 </div>
             )}
 
-            {llm?.headline && (
-                <div style={{ fontStyle: "italic", color: "var(--text-primary)" }}>"{llm.headline}"</div>
-            )}
+            {/* Flags */}
             {flags.length > 0 && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-                    {flags.map((f: any, i: number) => (
-                        <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--text-secondary)" }}>
-                            <span style={{ width: 8, height: 8, borderRadius: "50%", background: colorForLevel(f.level), flexShrink: 0 }} />
-                            <span style={{ color: "var(--text-primary)", fontWeight: 500, minWidth: 80, textTransform: "capitalize" }}>{f.type}</span>
-                            <span>{f.message}</span>
-                        </div>
-                    ))}
+                <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "0.85rem" }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.6px", marginBottom: 6 }}>Flags</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                        {flags.map((f: any, i: number) => (
+                            <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                                <span style={{ width: 8, height: 8, borderRadius: "50%", background: colorForLevel(f.level), flexShrink: 0 }} />
+                                <span style={{ color: "var(--text-primary)", fontWeight: 500, minWidth: 80, textTransform: "capitalize" as const }}>{f.type}</span>
+                                <span style={{ color: "var(--text-secondary)" }}>{f.message}</span>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             )}
+
+            {/* Submission history */}
             {(sentAt || pastSubs.length > 0) && (
-                <div>
-                    <div style={{ fontWeight: 600, fontSize: 12, marginBottom: "0.4rem", textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--text-secondary)" }}>Submission History</div>
+                <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "0.85rem" }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.6px", marginBottom: 6 }}>Submission History</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
                         {sentAt && (
                             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: 12 }}>
@@ -155,18 +220,6 @@ function OverviewSection({ profile }: { profile: Profile }) {
                             </div>
                         ))}
                     </div>
-                </div>
-            )}
-
-            {recentComments.length > 0 && (
-                <div>
-                    <div style={{ fontWeight: 600, marginBottom: "0.3rem" }}>Recent comments</div>
-                    {recentComments.map((c: any, i: number) => (
-                        <div key={i} style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: "0.4rem", borderLeft: "3px solid var(--border-subtle)", paddingLeft: "0.6rem" }}>
-                            <div style={{ color: "var(--text-primary)" }}>"{c.comment}"</div>
-                            <div style={{ fontSize: 11 }}>— {c.author_name || "unknown"} · {fmtDate(c.date)} {c.requirement_name && `· for ${c.requirement_name}`}</div>
-                        </div>
-                    ))}
                 </div>
             )}
         </div>
@@ -302,10 +355,25 @@ function LlmSection({ profile, jdId, onUpdated }: { profile: Profile; jdId: stri
 }
 
 function CommentsSection({ profile, jdId, onUpdated }: { profile: Profile; jdId: string; onUpdated: (next: Profile) => void }) {
+    const { user } = useAuth();
     const [draft, setDraft] = useState("");
     const [posting, setPosting] = useState(false);
     const [err, setErr] = useState<string | null>(null);
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editText, setEditText] = useState("");
+    const [editSaving, setEditSaving] = useState(false);
     const comments = profile.recruiter_comments || [];
+
+    const [reqHistory, setReqHistory] = useState<any[]>([]);
+    const [historyLoading, setHistoryLoading] = useState(false);
+    useEffect(() => {
+        if (!profile.candidate_uuid) return;
+        setHistoryLoading(true);
+        api.get(`/candidates/${profile.candidate_uuid}/requirement-history`)
+            .then((data: any[]) => setReqHistory((data || []).filter(h => String(h.requirement_id) !== String(jdId))))
+            .catch(() => setReqHistory([]))
+            .finally(() => setHistoryLoading(false));
+    }, [profile.candidate_uuid, jdId]);
 
     const submit = async () => {
         const trimmed = draft.trim();
@@ -322,6 +390,24 @@ function CommentsSection({ profile, jdId, onUpdated }: { profile: Profile; jdId:
             setErr(e?.detail || e?.message || "Could not post comment");
         } finally {
             setPosting(false);
+        }
+    };
+
+    const saveEdit = async (commentId: string) => {
+        const trimmed = editText.trim();
+        if (!trimmed || editSaving) return;
+        setEditSaving(true);
+        try {
+            const updated = await api.patch(
+                `/requirements/${jdId}/profiles/${profile.candidate_uuid}/comments/${commentId}`,
+                { comment: trimmed }
+            );
+            onUpdated(updated);
+            setEditingId(null);
+        } catch (e: any) {
+            setErr(e?.detail || e?.message || "Could not save edit");
+        } finally {
+            setEditSaving(false);
         }
     };
 
@@ -347,25 +433,104 @@ function CommentsSection({ profile, jdId, onUpdated }: { profile: Profile; jdId:
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
                 {comments.length === 0 && <div className="text-sm text-muted">No comments yet.</div>}
-                {[...comments].reverse().map((c: any, i: number) => (
-                    <div key={i} style={{ fontSize: 13, borderLeft: "3px solid var(--border-subtle)", paddingLeft: "0.6rem" }}>
-                        <div style={{ color: "var(--text-primary)" }}>{c.comment}</div>
-                        <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: "0.2rem", display: "flex", gap: "0.4rem", flexWrap: "wrap", alignItems: "center" }}>
-                            <span style={{ fontWeight: 500, color: "var(--text-primary)" }}>{c.author_name || "Unknown"}</span>
-                            <span>·</span>
-                            <span>{fmtDate(c.date)}</span>
-                            {c.requirement_name && (
-                                <>
-                                    <span>·</span>
-                                    <span style={{ background: "var(--bg-secondary)", border: "1px solid var(--border-subtle)", borderRadius: 4, padding: "0px 6px", fontSize: 10 }}>
-                                        {c.requirement_name}
-                                    </span>
-                                </>
+                {[...comments].reverse().map((c: any, i: number) => {
+                    const isOwn = user?.id && c.author_id && String(c.author_id) === String(user.id);
+                    const isEditing = editingId === String(c.id);
+                    return (
+                        <div key={i} style={{ fontSize: 13, borderLeft: "3px solid var(--border-subtle)", paddingLeft: "0.6rem" }}>
+                            {isEditing ? (
+                                <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                                    <textarea
+                                        value={editText}
+                                        onChange={e => setEditText(e.target.value)}
+                                        rows={2}
+                                        autoFocus
+                                        style={{ resize: "vertical", padding: "0.4rem", fontSize: 13, border: "1px solid var(--accent)", borderRadius: 4, width: "100%" }}
+                                    />
+                                    <div style={{ display: "flex", gap: "0.4rem" }}>
+                                        <button className="btn btn-primary btn-sm" onClick={() => saveEdit(String(c.id))} disabled={editSaving || !editText.trim()}>
+                                            {editSaving ? "Saving…" : "Save"}
+                                        </button>
+                                        <button className="btn btn-ghost btn-sm" onClick={() => setEditingId(null)} disabled={editSaving}>Cancel</button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div style={{ color: "var(--text-primary)" }}>{c.comment}</div>
                             )}
+                            <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: "0.2rem", display: "flex", gap: "0.4rem", flexWrap: "wrap", alignItems: "center" }}>
+                                <span style={{ fontWeight: 500, color: "var(--text-primary)" }}>{c.author_name || "Unknown"}</span>
+                                <span>·</span>
+                                <span>{fmtDate(c.date)}</span>
+                                {c.requirement_name && (
+                                    <>
+                                        <span>·</span>
+                                        <span style={{ background: "var(--bg-secondary)", border: "1px solid var(--border-subtle)", borderRadius: 4, padding: "0px 6px", fontSize: 10 }}>
+                                            {c.requirement_name}
+                                        </span>
+                                    </>
+                                )}
+                                {isOwn && !isEditing && c.id && (
+                                    <button
+                                        style={{ marginLeft: "auto", fontSize: 10, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: "0 2px" }}
+                                        onClick={() => { setEditingId(String(c.id)); setEditText(c.comment); }}
+                                    >Edit</button>
+                                )}
+                            </div>
                         </div>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
+
+            {/* Requirement history */}
+            {(historyLoading || reqHistory.length > 0) && (
+                <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "0.85rem" }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.6px", marginBottom: 8 }}>
+                        Other Requirements
+                    </div>
+                    {historyLoading ? (
+                        <div style={{ fontSize: 12, color: "var(--text-muted)" }}>Loading…</div>
+                    ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                            {reqHistory.map((h, i) => {
+                                const STATUS_LABEL: Record<string, string> = {
+                                    SENT: "Submitted", L1_SELECTED: "L1", L2_SELECTED: "L2",
+                                    L3_SELECTED: "L3", HR_ROUND: "HR Round", HR_SELECTED: "HR",
+                                    SELECTED: "Selected", OFFER_RELEASED: "Offered", OFFER_ACCEPTED: "Accepted",
+                                    JOINED: "Joined", REJECTED: "Rejected",
+                                };
+                                const statusColor = h.status === "SELECTED" || h.status === "JOINED" ? "#16a34a"
+                                    : h.status === "REJECTED" ? "#dc2626"
+                                    : h.status === "SENT" ? "#2563eb"
+                                    : h.status ? "#ca8a04"
+                                    : "var(--text-muted)";
+                                return (
+                                    <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.4rem 0.6rem", background: "var(--bg-secondary)", borderRadius: 6, border: "1px solid var(--border-subtle)" }}>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                                {h.req_id && <span style={{ color: "var(--text-muted)", fontWeight: 400, marginRight: 4, fontFamily: "monospace", fontSize: 11 }}>{h.req_id}</span>}
+                                                {h.requirement_name || "—"}
+                                            </div>
+                                            {h.sent_at && (
+                                                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                                                    {new Date(h.sent_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                                                    {h.recruiter_name && <> · {h.recruiter_name}</>}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexShrink: 0 }}>
+                                            {h.det_score != null && <span style={{ fontSize: 11, fontFamily: "monospace", color: "var(--text-muted)" }}>{h.det_score}%</span>}
+                                            {h.ai_score != null && <span style={{ fontSize: 11, fontFamily: "monospace", color: "#2563eb" }}>AI {h.ai_score}</span>}
+                                            <span style={{ fontSize: 11, fontWeight: 700, color: statusColor }}>
+                                                {h.status ? (STATUS_LABEL[h.status] || h.status) : "Pool"}
+                                            </span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 }
@@ -383,11 +548,15 @@ function UpdateForm({ profile, jdId, refreshProfile }: {
         relevant_experience: cand.relevant_experience || "",
         reason_for_change: cand.reason_for_change || "",
     });
+    const { user } = useAuth();
     const [saving, setSaving] = useState(false);
     const [saveMsg, setSaveMsg] = useState<string | null>(null);
     const [draft, setDraft] = useState("");
     const [posting, setPosting] = useState(false);
     const [commentErr, setCommentErr] = useState<string | null>(null);
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editText, setEditText] = useState("");
+    const [editSaving, setEditSaving] = useState(false);
     const comments = profile.recruiter_comments || [];
 
     useEffect(() => {
@@ -402,6 +571,10 @@ function UpdateForm({ profile, jdId, refreshProfile }: {
     }, [profile.candidate_uuid]);
 
     const handleSaveFields = async () => {
+        if (!fields.reason_for_change.trim()) {
+            setSaveMsg("Reason for change is required");
+            return;
+        }
         setSaving(true); setSaveMsg(null);
         try {
             const body: any = {
@@ -431,6 +604,21 @@ function UpdateForm({ profile, jdId, refreshProfile }: {
             setDraft("");
         } catch (e: any) { setCommentErr(e?.detail || e?.message || "Could not post comment"); }
         finally { setPosting(false); }
+    };
+
+    const handleSaveEdit = async (commentId: string) => {
+        const trimmed = editText.trim();
+        if (!trimmed || editSaving) return;
+        setEditSaving(true);
+        try {
+            await api.patch(
+                `/requirements/${jdId}/profiles/${profile.candidate_uuid}/comments/${commentId}`,
+                { comment: trimmed },
+            );
+            await refreshProfile();
+            setEditingId(null);
+        } catch (e: any) { setCommentErr(e?.detail || e?.message || "Could not save edit"); }
+        finally { setEditSaving(false); }
     };
 
     const inputStyle: React.CSSProperties = {
@@ -467,9 +655,11 @@ function UpdateForm({ profile, jdId, refreshProfile }: {
                             onChange={e => setFields(p => ({ ...p, relevant_experience: e.target.value }))} />
                     </div>
                     <div style={{ gridColumn: "1 / -1" }}>
-                        <label style={{ fontSize: 11, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 2, display: "block" }}>Reason for Change</label>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 2, display: "block" }}>
+                            Reason for Change <span style={{ color: "#dc2626" }}>*</span>
+                        </label>
                         <textarea rows={2} value={fields.reason_for_change} placeholder="Why is the candidate looking for a change?"
-                            style={{ ...inputStyle, resize: "vertical" }}
+                            style={{ ...inputStyle, resize: "vertical", borderColor: fields.reason_for_change.trim() ? undefined : "#dc2626" }}
                             onChange={e => setFields(p => ({ ...p, reason_for_change: e.target.value }))} />
                     </div>
                 </div>
@@ -503,14 +693,42 @@ function UpdateForm({ profile, jdId, refreshProfile }: {
                 <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "0.75rem" }}>
                     <div style={{ fontWeight: 600, fontSize: 14, marginBottom: "0.5rem" }}>Comments ({comments.length})</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
-                        {[...comments].reverse().map((c: any, i: number) => (
-                            <div key={i} style={{ fontSize: 13, borderLeft: "3px solid var(--border-subtle)", paddingLeft: "0.6rem" }}>
-                                <div style={{ color: "var(--text-primary)" }}>{c.comment}</div>
-                                <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: "0.15rem" }}>
-                                    — {c.author_name || "unknown"} · {fmtDate(c.date)}
+                        {[...comments].reverse().map((c: any, i: number) => {
+                            const isOwn = user?.id && c.author_id && String(c.author_id) === String(user.id);
+                            const isEditing = editingId === String(c.id);
+                            return (
+                                <div key={i} style={{ fontSize: 13, borderLeft: "3px solid var(--border-subtle)", paddingLeft: "0.6rem" }}>
+                                    {isEditing ? (
+                                        <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                                            <textarea
+                                                value={editText}
+                                                onChange={e => setEditText(e.target.value)}
+                                                rows={2}
+                                                autoFocus
+                                                style={{ resize: "vertical", padding: "0.4rem", fontSize: 13, border: "1px solid var(--accent)", borderRadius: 4, width: "100%" }}
+                                            />
+                                            <div style={{ display: "flex", gap: "0.4rem" }}>
+                                                <button className="btn btn-primary btn-sm" onClick={() => handleSaveEdit(String(c.id))} disabled={editSaving || !editText.trim()}>
+                                                    {editSaving ? "Saving…" : "Save"}
+                                                </button>
+                                                <button className="btn btn-ghost btn-sm" onClick={() => setEditingId(null)} disabled={editSaving}>Cancel</button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div style={{ color: "var(--text-primary)" }}>{c.comment}</div>
+                                    )}
+                                    <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: "0.15rem", display: "flex", gap: "0.4rem", flexWrap: "wrap", alignItems: "center" }}>
+                                        <span>— {c.author_name || "unknown"} · {fmtDate(c.date)}</span>
+                                        {isOwn && !isEditing && c.id && (
+                                            <button
+                                                style={{ fontSize: 10, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: "0 2px" }}
+                                                onClick={() => { setEditingId(String(c.id)); setEditText(c.comment); }}
+                                            >Edit</button>
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             )}
@@ -544,7 +762,8 @@ function ReviewPanel({ profile, jdId }: { profile: Profile; jdId: string }) {
     const requiredFilled =
         fields.current_ctc.trim() !== "" &&
         fields.expected_ctc.trim() !== "" &&
-        fields.notice_period.trim() !== "";
+        fields.notice_period.trim() !== "" &&
+        fields.reason_for_change.trim() !== "";
 
     const inputStyle: React.CSSProperties = {
         padding: "0.45rem 0.65rem", fontSize: 13,
@@ -638,8 +857,10 @@ function ReviewPanel({ profile, jdId }: { profile: Profile; jdId: string }) {
                             value={fields.relevant_experience} onChange={e => setFields(p => ({ ...p, relevant_experience: e.target.value }))} />
                     </div>
                     <div style={{ gridColumn: "1 / -1" }}>
-                        <label style={{ fontSize: 11, fontWeight: 500, color: "var(--text-secondary)", display: "block", marginBottom: 2 }}>Reason for Change</label>
-                        <textarea rows={2} placeholder="Why is the candidate looking for a change?" style={{ ...inputStyle, resize: "vertical" }}
+                        <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 2 }}>
+                            Reason for Change <span style={{ color: "#dc2626" }}>*</span>
+                        </label>
+                        <textarea rows={2} placeholder="Why is the candidate looking for a change?" style={{ ...inputStyle, resize: "vertical", borderColor: fields.reason_for_change.trim() ? undefined : "#dc2626" }}
                             value={fields.reason_for_change} onChange={e => setFields(p => ({ ...p, reason_for_change: e.target.value }))} />
                     </div>
                 </div>
@@ -647,7 +868,7 @@ function ReviewPanel({ profile, jdId }: { profile: Profile; jdId: string }) {
 
             <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "1rem", display: "flex", flexDirection: "column", gap: "0.4rem" }}>
                 {!requiredFilled && (
-                    <div style={{ fontSize: 12, color: "#dc2626" }}>Fill Current CTC, Expected CTC, and Notice Period to enable submission.</div>
+                    <div style={{ fontSize: 12, color: "#dc2626" }}>Fill in all required fields (CTC, Notice Period, Reason for Change) to enable submission.</div>
                 )}
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
                     <button className="btn btn-ghost" onClick={drawer.close} disabled={saving}>Cancel</button>
@@ -703,6 +924,11 @@ export default function ProfileDrawer({ jdId, profile, action, initialTab, onUpd
     const headerLabel = action === "update" ? "Update Profile" : action === "submit" ? "Review" : "";
 
     return (
+        <>
+        <div
+            onClick={drawer.close}
+            style={{ position: "fixed", inset: 0, zIndex: 999, background: "rgba(0,0,0,0.18)" }}
+        />
         <aside
             style={{
                 position: "fixed", top: 0, right: 0, bottom: 0,
@@ -789,5 +1015,6 @@ export default function ProfileDrawer({ jdId, profile, action, initialTab, onUpd
                 )}
             </div>
         </aside>
+        </>
     );
 }

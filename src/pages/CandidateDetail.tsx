@@ -64,6 +64,10 @@ export default function CandidateDetail() {
   const [resumeContentType, setResumeContentType] = useState<string>("");
   const [deleting, setDeleting] = useState(false);
 
+  // Requirement history
+  const [reqHistory, setReqHistory] = useState<any[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
   // Editable fields
   const [currentCtc, setCurrentCtc] = useState<string>("");
   const [expectedCtc, setExpectedCtc] = useState<string>("");
@@ -115,6 +119,11 @@ export default function CandidateDetail() {
         setLoading(false);
       }
     })();
+    setHistoryLoading(true);
+    api.get(`/candidates/${candidateId}/requirement-history`)
+      .then((data: any[]) => setReqHistory(data || []))
+      .catch(() => setReqHistory([]))
+      .finally(() => setHistoryLoading(false));
   }, [candidateId]);
 
   useEffect(() => {
@@ -347,6 +356,66 @@ export default function CandidateDetail() {
           </div>
         )}
       </section>
+
+      {/* Requirement history */}
+      {(historyLoading || reqHistory.length > 0) && (
+        <section style={{ marginBottom: "2rem", padding: "1rem 1.25rem", background: "var(--bg-card)", borderRadius: "10px", border: "1px solid var(--border-subtle)" }}>
+          <h2 style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", margin: "0 0 0.75rem" }}>
+            Requirement History
+            {reqHistory.length > 0 && <span style={{ fontWeight: 500, marginLeft: 6 }}>· {reqHistory.length}</span>}
+          </h2>
+          {historyLoading ? (
+            <div style={{ fontSize: 13, color: "var(--text-muted)" }}>Loading…</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              {reqHistory.map((h, i) => {
+                const statusColor = h.status === "SELECTED" ? "#16a34a"
+                  : h.status === "REJECTED" ? "#dc2626"
+                  : h.status === "SENT" ? "#2563eb"
+                  : h.status ? "#ca8a04"
+                  : "var(--text-muted)";
+                const STATUS_LABEL: Record<string, string> = {
+                  SENT: "Submitted", L1_SELECTED: "L1 Selected", L2_SELECTED: "L2 Selected",
+                  L3_SELECTED: "L3 Selected", HR_ROUND: "HR Round", HR_SELECTED: "HR Selected",
+                  SELECTED: "Selected", OFFER_RELEASED: "Offer Released", OFFER_ACCEPTED: "Offer Accepted",
+                  JOINED: "Joined", REJECTED: "Rejected",
+                };
+                return (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.55rem 0.75rem", background: "var(--bg-secondary)", borderRadius: 8, border: "1px solid var(--border-subtle)", flexWrap: "wrap" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
+                        {h.req_id && <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", fontFamily: "monospace" }}>{h.req_id}</span>}
+                        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.requirement_name || "—"}</span>
+                        {h.req_status && h.req_status !== "OPEN" && (
+                          <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: "var(--bg-primary)", border: "1px solid var(--border-subtle)", color: "var(--text-muted)" }}>{h.req_status}</span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                        {h.in_pool && !h.submitted && <span>In pool</span>}
+                        {h.recruiter_name && <span>· {h.recruiter_name}</span>}
+                        {h.sent_at && <span>· {new Date(h.sent_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
+                      {h.det_score != null && (
+                        <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary)", fontFamily: "monospace" }}>{h.det_score}%</span>
+                      )}
+                      {h.ai_score != null && (
+                        <span style={{ fontSize: 12, fontWeight: 700, color: "#2563eb", fontFamily: "monospace" }}>AI {h.ai_score}</span>
+                      )}
+                      {h.status ? (
+                        <span style={{ fontSize: 12, fontWeight: 700, color: statusColor }}>{STATUS_LABEL[h.status] || h.status}</span>
+                      ) : (
+                        <span style={{ fontSize: 11, color: "var(--text-muted)", background: "var(--bg-primary)", border: "1px solid var(--border-subtle)", borderRadius: 4, padding: "1px 7px" }}>Pool</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Candidate details */}
       <div>

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../services/api";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import StatusBadge from "../components/StatusBadge";
 
 import { useJdViewer } from "../context/JdViewerContext";
@@ -69,6 +70,11 @@ interface Requirement {
     requirement_type: string | null;
     role_type: string | null;
     client_spoc_name: string | null;
+    location: string | null;
+    notice_period: string | null;
+    years_of_experience: string | null;
+    max_years_experience: string | null;
+    mode_of_work: string | null;
     sla_hours_to_first_submission?: number | null;
     sla_timezone?: string | null;
     sla_status?: string | null;
@@ -79,6 +85,7 @@ interface Requirement {
     sla_remaining_hours?: number | null;
     status: string;
     created_at: string;
+    updated_at?: string | null;
     assigned_recruiters?: string[];
 }
 
@@ -94,6 +101,155 @@ interface Application {
     rejection_reason: string | null;
     source: string | null;
     candidate_name: string | null;
+    recruiter_name: string | null;
+}
+
+const SUB_PAGE_SIZE = 10;
+
+function npColor(notice?: string | null): string {
+    if (!notice) return "var(--text-secondary)";
+    const l = notice.toLowerCase();
+    if (l.includes("immediate") || l.includes("serving") || l === "0") return "#16a34a";
+    const n = parseInt(l);
+    if (!isNaN(n)) { if (n <= 15) return "#16a34a"; if (n <= 60) return "#d97706"; return "#dc2626"; }
+    return "var(--text-secondary)";
+}
+
+function SubmissionDetailModal({ app, prof, isAdmin, onClose }: { app: Application; prof: any; isAdmin: boolean; onClose: () => void }) {
+    useEffect(() => {
+        const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+        window.addEventListener("keydown", h);
+        return () => window.removeEventListener("keydown", h);
+    }, [onClose]);
+
+    const det = prof?.deterministic_scoring_analysis || {};
+    const cand = prof?.candidate || {};
+    const personal = cand.PersonalDetails || {};
+    const mostRecent = (cand.Experience || [])[0] || {};
+    const llm = prof?.llm_analysis;
+
+    const currentRole = det.current_role || mostRecent.Position || cand.current_role;
+    const currentCompany = det.current_company || mostRecent.Company || cand.current_company;
+    const currentCtc = cand.current_ctc ?? cand.present_ctc;
+    const expectedCtc = cand.expected_ctc;
+    const noticePeriod = cand.notice_period || personal.NoticePeriod;
+    const relevantExp = cand.relevant_experience;
+    const reasonForChange = cand.reason_for_change;
+    const totalExp = cand.experience_label
+        || (det.total_experience_years != null ? `${det.total_experience_years} yrs` : undefined);
+
+    const detFlags = (det.flags || []).map((f: any) => ({ ...f, level: f.severity }));
+    const llmFlags = llm?.flags || [];
+    const flags = [...detFlags, ...llmFlags];
+
+    const Field = ({ label, value }: { label: string; value?: any }) => (
+        <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.6px", marginBottom: 3 }}>{label}</div>
+            <div style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 500, lineHeight: 1.45 }}>
+                {value ?? <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>—</span>}
+            </div>
+        </div>
+    );
+
+    return (
+        <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.52)", display: "flex", alignItems: "center", justifyContent: "center", padding: "1.5rem" }} onClick={onClose}>
+            <div style={{ background: "var(--bg-primary)", borderRadius: 14, boxShadow: "0 24px 80px rgba(0,0,0,0.35)", width: "100%", maxWidth: 560, maxHeight: "85vh", display: "flex", flexDirection: "column", overflow: "hidden", border: "1px solid var(--border-subtle)" }} onClick={e => e.stopPropagation()}>
+                <div style={{ padding: "1.1rem 1.4rem", borderBottom: "1px solid var(--border-subtle)", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "0.75rem", flexShrink: 0 }}>
+                    <div>
+                        <div style={{ fontSize: 17, fontWeight: 800, color: "var(--text-primary)", lineHeight: 1.2 }}>{app.candidate_name || "—"}</div>
+                        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 3, display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
+                            <StatusBadge status={app.status} />
+                            <span style={{ color: "var(--text-muted)" }}>·</span>
+                            <span>{new Date(app.sent_at).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}</span>
+                            {isAdmin && app.recruiter_name && (<><span style={{ color: "var(--text-muted)" }}>· by</span><span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{app.recruiter_name}</span></>)}
+                        </div>
+                    </div>
+                    <button onClick={onClose} style={{ background: "var(--bg-secondary)", border: "1px solid var(--border-subtle)", borderRadius: 8, cursor: "pointer", fontSize: 18, color: "var(--text-secondary)", lineHeight: 1, padding: "4px 9px", flexShrink: 0, marginTop: 2 }} title="Close (Esc)">×</button>
+                </div>
+                <div style={{ padding: "1.1rem 1.4rem", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: "1rem" }}>
+                    {llm?.overall_score != null && (
+                        <div style={{ display: "flex", alignItems: "center", gap: "1rem", padding: "0.65rem 0.9rem", background: "var(--bg-secondary)", borderRadius: 8, border: "1px solid var(--border-subtle)" }}>
+                            <div style={{ flexShrink: 0 }}>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.6px" }}>AI Score</div>
+                                <div style={{ fontSize: 22, fontWeight: 800, color: "#2563eb", fontFamily: "monospace", lineHeight: 1.1 }}>{llm.overall_score}<span style={{ fontSize: 12, fontWeight: 400, color: "var(--text-secondary)" }}>/100</span></div>
+                            </div>
+                            {llm.rating && <span style={{ fontSize: 12, color: "var(--text-secondary)", background: "var(--bg-primary)", padding: "2px 8px", borderRadius: 4, border: "1px solid var(--border-subtle)", flexShrink: 0 }}>{llm.rating}</span>}
+                            {llm.headline && <div style={{ fontStyle: "italic", color: "var(--text-secondary)", fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>"{llm.headline}"</div>}
+                        </div>
+                    )}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem 1.5rem" }}>
+                        <Field label="Current Role" value={currentRole} />
+                        <Field label="Current Company" value={currentCompany} />
+                        <Field label="Current CTC" value={currentCtc != null ? `${currentCtc} LPA` : undefined} />
+                        <Field label="Expected CTC" value={expectedCtc != null ? `${expectedCtc} LPA` : undefined} />
+                        <Field label="Notice Period" value={noticePeriod ? <span style={{ color: npColor(noticePeriod), fontWeight: 600 }}>{noticePeriod}</span> : undefined} />
+                        <Field label="Total Experience" value={totalExp} />
+                    </div>
+                    {relevantExp && (
+                        <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "0.85rem" }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.6px", marginBottom: 4 }}>Relevant Experience</div>
+                            <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.55 }}>{relevantExp}</div>
+                        </div>
+                    )}
+                    {reasonForChange && (
+                        <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "0.85rem" }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.6px", marginBottom: 4 }}>Reason for Change</div>
+                            <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.55 }}>{reasonForChange}</div>
+                        </div>
+                    )}
+                    {app.recruiter_comments && (
+                        <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "0.85rem" }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.6px", marginBottom: 4 }}>Recruiter Comments</div>
+                            <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.55 }}>{app.recruiter_comments}</div>
+                        </div>
+                    )}
+                    {app.rejection_reason && (
+                        <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "0.85rem" }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.6px", marginBottom: 4 }}>Rejection Reason</div>
+                            <div style={{ fontSize: 13, color: "#dc2626", lineHeight: 1.55 }}>{app.rejection_reason}</div>
+                        </div>
+                    )}
+                    {flags.length > 0 && (
+                        <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "0.85rem" }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.6px", marginBottom: 6 }}>Flags</div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                                {
+                                    (flags && flags.length > 0) ? (
+                                        <table border={0} style={{ borderCollapse: "collapse", width: "100%" }}>
+                                            <tbody>
+                                                {flags.map((f: any, i: number) => {
+                                                    const col = f.level === "green" ? "#16a34a" : f.level === "orange" ? "#ca8a04" : (f.level === "red" || f.level === "warning") ? "#dc2626" : "#6b7280";
+                                                    return (
+                                                        <tr key={i}>
+                                                            <td style={{ width: "20px", verticalAlign: "middle", padding: "6px 8px 6px 0" }}>
+                                                                <span style={{ display: "block", width: 8, height: 8, borderRadius: "50%", background: col }} />
+                                                            </td>
+                                                            <td style={{ color: "var(--text-primary)", fontWeight: 500, minWidth: 80, textTransform: "capitalize" as const, padding: "6px 16px 6px 0", verticalAlign: "middle" }}>{f.type}</td>
+                                                            <td style={{ color: "var(--text-secondary)", padding: "6px 0", verticalAlign: "middle" }}>{f.message}</td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    ) : <></>
+                                }
+                                {/* {flags.map((f: any, i: number) => {
+                                    const col = f.level === "green" ? "#16a34a" : f.level === "orange" ? "#ca8a04" : (f.level === "red" || f.level === "warning") ? "#dc2626" : "#6b7280";
+                                    return (
+                                        <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                                            <span style={{ width: 8, height: 8, borderRadius: "50%", background: col, flexShrink: 0 }} />
+                                            <span style={{ color: "var(--text-primary)", fontWeight: 500, minWidth: 80, textTransform: "capitalize" as const }}>{f.type}</span>
+                                            <span style={{ color: "var(--text-secondary)" }}>{f.message}</span>
+                                        </div>
+                                    );
+                                })} */}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
 }
 
 export default function RequirementDetail() {
@@ -106,14 +262,16 @@ export default function RequirementDetail() {
     const [loading, setLoading] = useState(true);
     const [_showJd, _setShowJd] = useState(false);
 
+    // Submission detail modal
+    const [selectedSub, setSelectedSub] = useState<{ app: Application; prof: any } | null>(null);
+    const [subPage, setSubPage] = useState(1);
+
     // Status change modal
     const [selectedApp, setSelectedApp] = useState<Application | null>(null);
     const [newStatus, setNewStatus] = useState("");
     const [rejectionReason, setRejectionReason] = useState("");
     const [statusNotes, setStatusNotes] = useState("");
     const [statusError, setStatusError] = useState("");
-    const [commentsApp, setCommentsApp] = useState<Application | null>(null);
-
     // Req Status Update
     const [showStatusModal, setShowStatusModal] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -123,10 +281,22 @@ export default function RequirementDetail() {
     const [newReqStatus, setNewReqStatus] = useState("");
 
     // Profiles list (replaces old recommended/manual split)
-    const [suggestions, setSuggestions] = useState<any[]>([]);
-    const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+    const queryClient = useQueryClient();
     const [generatingSuggestions, setGeneratingSuggestions] = useState(false);
     const [suggestionsError, setSuggestionsError] = useState<string | null>(null);
+
+    const {
+        data: _profilesResult,
+        isLoading: loadingSuggestions,
+        refetch: _refetchProfiles,
+    } = useQuery({
+        queryKey: ["profiles", id],
+        queryFn: () => api.get(`/requirements/${id}/profiles`),
+        enabled: !!id,
+        staleTime: 30 * 1000,
+    });
+    const suggestions: any[] = _profilesResult?.profiles ?? [];
+    const fetchProfiles = () => _refetchProfiles();
 
     // Resume upload state (multi-file)
     const [manualUploading, setManualUploading] = useState(false);
@@ -135,6 +305,23 @@ export default function RequirementDetail() {
 
     const [mainTab, setMainTab] = useState<"submissions" | "profiles">("submissions");
 
+    // Inline edit state (admin only)
+    const [showEditPanel, setShowEditPanel] = useState(false);
+    const [editFields, setEditFields] = useState<{
+        requirement_name: string;
+        requirement_type: string;
+        role_type: string;
+        client_spoc_name: string;
+        location: string;
+        notice_period: string;
+        years_of_experience: string;
+        max_years_experience: string;
+        mode_of_work: string;
+        special_instructions: string;
+    } | null>(null);
+    const [editSaving, setEditSaving] = useState(false);
+    const [editErr, setEditErr] = useState<string | null>(null);
+
     const refreshApplications = async () => {
         if (!id) return;
         try {
@@ -142,6 +329,49 @@ export default function RequirementDetail() {
             setApplications(appData || []);
         } catch (err) {
             console.error("Failed to load applications:", err);
+        }
+    };
+
+    const openEditPanel = () => {
+        if (!req) return;
+        setEditFields({
+            requirement_name: req.requirement_name || "",
+            requirement_type: req.requirement_type || "",
+            role_type: req.role_type || "",
+            client_spoc_name: req.client_spoc_name || "",
+            location: req.location || "",
+            notice_period: req.notice_period || "",
+            years_of_experience: req.years_of_experience || "",
+            max_years_experience: req.max_years_experience || "",
+            mode_of_work: req.mode_of_work || "",
+            special_instructions: req.special_instructions || "",
+        });
+        setEditErr(null);
+        setShowEditPanel(true);
+    };
+
+    const handleSaveEdit = async () => {
+        if (!editFields || !id) return;
+        setEditSaving(true); setEditErr(null);
+        try {
+            const updated = await api.patch(`/requirements/${id}`, {
+                requirement_name: editFields.requirement_name.trim() || undefined,
+                requirement_type: editFields.requirement_type.trim() || null,
+                role_type: editFields.role_type.trim() || null,
+                client_spoc_name: editFields.client_spoc_name.trim() || null,
+                location: editFields.location.trim() || null,
+                notice_period: editFields.notice_period.trim() || null,
+                years_of_experience: editFields.years_of_experience.trim() || null,
+                max_years_experience: editFields.max_years_experience.trim() || null,
+                mode_of_work: editFields.mode_of_work.trim() || null,
+                special_instructions: editFields.special_instructions.trim() || null,
+            });
+            setReq(updated);
+            setShowEditPanel(false);
+        } catch (e: any) {
+            setEditErr(e?.detail || e?.message || "Failed to save");
+        } finally {
+            setEditSaving(false);
         }
     };
 
@@ -168,36 +398,22 @@ export default function RequirementDetail() {
         }
     }, [req, jdActiveReq, openJd]);
 
-    // Unified profile fetch — replaces the old recommendations + manual split.
-    const fetchProfiles = async () => {
-        if (!id) return;
-        setLoadingSuggestions(true);
-        try {
-            const result = await api.get(`/requirements/${id}/profiles`);
-            setSuggestions(result?.profiles || []);
-        } catch (err: any) {
-            console.error("Failed to load profiles:", err);
-            setSuggestions([]);
-        } finally {
-            setLoadingSuggestions(false);
-        }
-    };
-
-    useEffect(() => { void fetchProfiles(); }, [id]);
-
     useEffect(() => {
         const handleProfileUpdate = (e: any) => {
             const { profile: updatedProfile, jdId } = e.detail;
             if (jdId !== id) return;
-            setSuggestions(prev => {
-                const arr = prev || [];
-                return arr.map(p => p.candidate_uuid === updatedProfile.candidate_uuid ? updatedProfile : p);
-            });
+            // Patch the cached profile in place — avoids a full refetch for single-row updates
+            queryClient.setQueryData(["profiles", id], (old: any) => ({
+                ...(old || {}),
+                profiles: (old?.profiles ?? []).map((p: any) =>
+                    p.candidate_uuid === updatedProfile.candidate_uuid ? updatedProfile : p
+                ),
+            }));
             void refreshApplications();
         };
         window.addEventListener("tw-profile-updated", handleProfileUpdate as EventListener);
         return () => window.removeEventListener("tw-profile-updated", handleProfileUpdate as EventListener);
-    }, [id]);
+    }, [id, queryClient]);
 
     const refreshPendingRequest = async () => {
         if (!id || !user) return;
@@ -243,23 +459,6 @@ export default function RequirementDetail() {
         }
     };
 
-    const [rescoring, setRescoring] = useState(false);
-    const handleRescoreAll = async () => {
-        if (!id || rescoring) return;
-        setRescoring(true);
-        setSuggestionsError(null);
-        try {
-            const result = await api.post(`/requirements/${id}/profiles/rescore-all`, {});
-            await fetchProfiles();
-            const msg = `Rescored ${result.rescored} profiles${result.removed > 0 ? `, removed ${result.removed} poor matches` : ""}`;
-            setSuggestionsError(msg);
-            setTimeout(() => setSuggestionsError(null), 4000);
-        } catch (err: any) {
-            setSuggestionsError(err?.detail || err?.message || "Rescore failed");
-        } finally {
-            setRescoring(false);
-        }
-    };
 
     // Unified resume upload — multi-file, non-gated. Each file goes through
     // /profiles/upload which stores in talent pool + scores against this req + upserts a profile row.
@@ -317,13 +516,14 @@ export default function RequirementDetail() {
             setApplications((prev) =>
                 prev.map((a) => (a.id === updated.id ? updated : a))
             );
-            setSuggestions((prev) =>
-                prev.map((p) =>
+            queryClient.setQueryData(["profiles", id], (old: any) => ({
+                ...(old || {}),
+                profiles: (old?.profiles ?? []).map((p: any) =>
                     p.candidate_uuid === updated.candidate_id
                         ? { ...p, application_status: updated.status }
                         : p
-                )
-            );
+                ),
+            }));
             setSelectedApp(null);
             setNewStatus("");
             setRejectionReason("");
@@ -394,6 +594,13 @@ export default function RequirementDetail() {
 
     return (
         <div>
+            <button
+                className="btn btn-ghost"
+                onClick={() => navigate(-1)}
+                style={{ marginBottom: "0.75rem", fontSize: 13, display: "inline-flex", alignItems: "center", gap: "0.3rem" }}
+            >
+                ← Back
+            </button>
             <div className="detail-header">
                 <div>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
@@ -402,8 +609,13 @@ export default function RequirementDetail() {
                         </span>
                         <StatusBadge status={req.status} />
                     </div>
-                    <h1 className="detail-title" style={{ marginTop: "0.25rem" }}>
+                    <h1 className="detail-title" style={{ marginTop: "0.25rem", display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
                         {req.requirement_name}
+                        {req.updated_at && (
+                            <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)", background: "var(--bg-secondary)", border: "1px solid var(--border-subtle)", borderRadius: 4, padding: "2px 8px", verticalAlign: "middle" }}>
+                                edited
+                            </span>
+                        )}
                     </h1>
                     <div className="detail-meta">
                         {req.requirement_type && (
@@ -440,6 +652,14 @@ export default function RequirementDetail() {
                                 </strong>
                             </span>
                         )}
+                        <span className="detail-meta-item" style={{ color: "var(--text-muted)", fontSize: "12px" }}>
+                            Created: {new Date(req.created_at).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}
+                        </span>
+                        {req.updated_at && (
+                            <span className="detail-meta-item" style={{ color: "var(--text-muted)", fontSize: "12px" }}>
+                                Edited: {new Date(req.updated_at).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}
+                            </span>
+                        )}
                     </div>
                 </div>
                 <div className="page-actions">
@@ -450,12 +670,12 @@ export default function RequirementDetail() {
                     >
                         <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Icon name="document" size={16} /> View JD</span>
                     </button>
-                    {isRecruiter && !isAdmin && (
+                    {isAdmin && req?.status !== "DELETED" && (
                         <button
-                            className="btn btn-primary"
-                            onClick={() => navigate(`/requirements/${id}/submit`)}
+                            className="btn btn-outline"
+                            onClick={openEditPanel}
                         >
-                            + Submit Profile
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Icon name="edit" size={16} /> Edit</span>
                         </button>
                     )}
                     <button
@@ -499,15 +719,6 @@ export default function RequirementDetail() {
                             onClick={() => setShowDeleteConfirm(true)}
                         >
                             <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Icon name="trash" size={16} /> Delete</span>
-                        </button>
-                    )}
-                    {isAdmin && req?.status !== "DELETED" && (
-                        <button
-                            className="btn btn-ghost"
-                            onClick={() => navigate(`/tracker/${id}`)}
-                        >
-                            <Icon name="chart" size={14} style={{ marginRight: 6, verticalAlign: "-2px" }} />
-                            Tracker
                         </button>
                     )}
                     {isAdmin && req?.status !== "DELETED" && (
@@ -604,6 +815,54 @@ export default function RequirementDetail() {
                 </div>
             )} */}
 
+            {/* ── Inline edit panel (admin only) ── */}
+            {showEditPanel && editFields && (
+                <div className="detail-section" style={{ marginBottom: "1.5rem", border: "1px solid var(--accent)", borderRadius: 10 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+                        <div style={{ fontWeight: 700, fontSize: 15 }}>Edit Requirement</div>
+                        <button className="btn btn-ghost btn-sm" onClick={() => setShowEditPanel(false)}>✕ Cancel</button>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.85rem" }}>
+                        {([
+                            { key: "requirement_name", label: "Requirement Name" },
+                            { key: "requirement_type", label: "Type" },
+                            { key: "role_type", label: "Role Type" },
+                            { key: "client_spoc_name", label: "Client SPOC" },
+                            { key: "location", label: "Location" },
+                            { key: "mode_of_work", label: "Mode of Work" },
+                            { key: "years_of_experience", label: "Min Experience" },
+                            { key: "max_years_experience", label: "Max Experience" },
+                            { key: "notice_period", label: "Notice Period" },
+                        ] as { key: keyof typeof editFields; label: string }[]).map(({ key, label }) => (
+                            <div key={key}>
+                                <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>{label}</label>
+                                <input
+                                    type="text"
+                                    value={editFields[key]}
+                                    onChange={e => setEditFields(p => p ? { ...p, [key]: e.target.value } : p)}
+                                    style={{ width: "100%", padding: "0.45rem 0.65rem", fontSize: 13, border: "1px solid var(--border-subtle)", borderRadius: 4, background: "var(--bg-input)", color: "var(--text-primary)" }}
+                                />
+                            </div>
+                        ))}
+                        <div style={{ gridColumn: "1 / -1" }}>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Special Instructions</label>
+                            <textarea
+                                value={editFields.special_instructions}
+                                onChange={e => setEditFields(p => p ? { ...p, special_instructions: e.target.value } : p)}
+                                rows={4}
+                                style={{ width: "100%", padding: "0.45rem 0.65rem", fontSize: 13, border: "1px solid var(--border-subtle)", borderRadius: 4, background: "var(--bg-input)", color: "var(--text-primary)", resize: "vertical", fontFamily: "inherit" }}
+                            />
+                        </div>
+                    </div>
+                    {editErr && <div style={{ fontSize: 12, color: "#dc2626", marginTop: "0.5rem" }}>{editErr}</div>}
+                    <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1rem" }}>
+                        <button className="btn btn-primary" onClick={handleSaveEdit} disabled={editSaving}>
+                            {editSaving ? "Saving…" : "Save Changes"}
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Status funnel — always visible */}
             <div className="stats-row">
                 <div className="stat-box">
@@ -630,8 +889,8 @@ export default function RequirementDetail() {
 
 
 
-            {/* ── Recruiter: Submissions | Profiles pill ── */}
-            {!isAdmin && isRecruiter && (
+            {/* ── Submissions | Profiles pill (all roles) ── */}
+            {(isAdmin || isRecruiter) && (
                 <div className="detail-section">
                     <div style={{ marginBottom: "1.25rem" }}>
                         <PillNav
@@ -648,73 +907,67 @@ export default function RequirementDetail() {
                         const profileByCandidate = Object.fromEntries(
                             suggestions.map(p => [String(p.candidate_uuid), p])
                         );
+                        const totalSubPages = Math.max(1, Math.ceil(applications.length / SUB_PAGE_SIZE));
+                        const clampedSubPage = Math.min(subPage, totalSubPages);
+                        const visibleApps = applications.slice((clampedSubPage - 1) * SUB_PAGE_SIZE, clampedSubPage * SUB_PAGE_SIZE);
                         return applications.length === 0 ? (
                             <div className="data-table-wrap">
                                 <div className="table-empty">
                                     <div className="table-empty-icon"><Icon name="user" size={48} /></div>
-                                    No submissions yet.{" "}
-                                    <a onClick={() => navigate(`/requirements/${id}/submit`)} style={{ cursor: "pointer" }}>Submit a profile</a>
+                                    No submissions yet.
                                 </div>
                             </div>
                         ) : (
                             <div className="data-table-wrap">
                                 <table className="data-table" style={{ tableLayout: "fixed", width: "100%" }}>
                                     <colgroup>
-                                        <col style={{ width: "26%" }} />
-                                        <col style={{ width: "13%" }} />
-                                        <col style={{ width: "10%" }} />
+                                        <col style={{ width: isAdmin ? "30%" : "36%" }} />
+                                        <col style={{ width: "15%" }} />
+                                        <col style={{ width: isAdmin ? "10%" : "11%" }} />
                                         <col style={{ width: "24%" }} />
-                                        <col style={{ width: "14%" }} />
-                                        <col style={{ width: "13%" }} />
+                                        <col style={{ width: isAdmin ? "21%" : "14%" }} />
                                     </colgroup>
                                     <thead>
                                         <tr>
-                                            <th>Candidate</th>
-                                            <th>Status</th>
-                                            <th>AI Score</th>
-                                            <th>Comments</th>
-                                            <th>Submitted</th>
-                                            <th>Action</th>
+                                            <th style={{ fontSize: 12 }}>Candidate</th>
+                                            <th style={{ fontSize: 12 }}>Status</th>
+                                            <th style={{ fontSize: 12 }}>AI Score</th>
+                                            <th style={{ fontSize: 12 }}>Submitted</th>
+                                            <th style={{ fontSize: 12 }}>Action</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {applications.map((app) => {
+                                        {visibleApps.map((app) => {
                                             const prof = profileByCandidate[String(app.candidate_id)];
                                             const isManual = app.source !== "talent_pool";
-                                            const uploadedBy = prof?.uploaded_by_name || prof?.recruiter_name;
-                                            const updatedBy = prof?.uploaded_by_name && prof?.recruiter_name !== prof?.uploaded_by_name
-                                                ? prof.recruiter_name : null;
                                             return (
                                                 <tr
                                                     key={app.id}
-                                                    onClick={() => setCommentsApp(app)}
-                                                    style={{ cursor: "pointer", transition: "background 0.2s" }}
-                                                    onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-secondary)"}
-                                                    onMouseLeave={(e) => e.currentTarget.style.background = ""}
+                                                    onClick={() => setSelectedSub({ app, prof: prof ?? null })}
+                                                    style={{ cursor: "pointer" }}
                                                 >
-                                                    <td style={{ wordBreak: "break-word" }}>
-                                                        <strong>{app.candidate_name || "—"}</strong>
-                                                        {isManual && uploadedBy && (
-                                                            <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
-                                                                Uploaded by {uploadedBy}
-                                                                {updatedBy && <span> · Updated by {updatedBy}</span>}
-                                                            </div>
-                                                        )}
+                                                    <td style={{ overflow: "hidden", maxWidth: 0 }}>
+                                                        <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600, fontSize: 13 }}>{app.candidate_name || "—"}</div>
+                                                        <div style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 1 }}>
+                                                            {isManual ? "Manual" : "Pool"}
+                                                            {app.recruiter_name && <> · {app.recruiter_name}</>}
+                                                        </div>
                                                     </td>
                                                     <td><StatusBadge status={app.status} /></td>
-                                                    <td>{app.ai_score != null ? <span className="font-mono">{app.ai_score}/100</span> : <span className="text-muted">—</span>}</td>
-                                                    <td className="text-sm">
-                                                        {(app.recruiter_comments || app.rejection_reason)
-                                                            ? <span style={{ fontSize: "12px", color: "var(--accent)", textDecoration: "underline" }}>View</span>
-                                                            : <span className="text-muted">—</span>}
-                                                    </td>
-                                                    <td className="text-muted text-sm">{new Date(app.sent_at).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}</td>
-                                                    <td>
-                                                        {app.status === "SENT" && (
+                                                    <td style={{ fontSize: 13 }}>{app.ai_score != null ? <span className="font-mono">{app.ai_score}/100</span> : <span className="text-muted">—</span>}</td>
+                                                    <td style={{ fontSize: 12, color: "var(--text-muted)", whiteSpace: "nowrap" }}>{new Date(app.sent_at).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}</td>
+                                                    <td onClick={(e) => e.stopPropagation()}>
+                                                        {isAdmin && getNextStatuses(app.status).length > 0 && (
+                                                            <button
+                                                                className="btn btn-ghost btn-sm"
+                                                                onClick={() => { setSelectedApp(app); setNewStatus(""); setRejectionReason(""); setStatusNotes(""); setStatusError(""); }}
+                                                            >Update</button>
+                                                        )}
+                                                        {!isAdmin && app.status === "SENT" && String(app.recruiter_id) === String(user?.id) && (
                                                             <button
                                                                 className="btn btn-ghost btn-sm"
                                                                 style={{ color: "var(--error, #e53e3e)", padding: "2px 8px" }}
-                                                                onClick={(e) => { e.stopPropagation(); handleRemoveApplication(app); }}
+                                                                onClick={() => handleRemoveApplication(app)}
                                                             >Remove</button>
                                                         )}
                                                     </td>
@@ -723,6 +976,16 @@ export default function RequirementDetail() {
                                         })}
                                     </tbody>
                                 </table>
+                                {totalSubPages > 1 && (
+                                    <div style={{ padding: "0.5rem 1rem", borderTop: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                        <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{applications.length} submissions</span>
+                                        <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                                            <button className="btn btn-primary btn-sm" onClick={() => setSubPage(p => Math.max(1, p - 1))} disabled={clampedSubPage <= 1}>‹</button>
+                                            <span style={{ fontSize: 13, color: "var(--text-secondary)", minWidth: 60, textAlign: "center" }}>{clampedSubPage} / {totalSubPages}</span>
+                                            <button className="btn btn-primary btn-sm" onClick={() => setSubPage(p => Math.min(totalSubPages, p + 1))} disabled={clampedSubPage >= totalSubPages}>›</button>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         );
                     })()}
@@ -738,12 +1001,6 @@ export default function RequirementDetail() {
                                     {suggestionsError && <span style={{ marginLeft: "0.75rem", color: "#dc2626" }}>{suggestionsError}</span>}
                                 </div>
                                 <div style={{ display: "flex", gap: "0.5rem" }}>
-                                    <button
-                                        className="btn btn-ghost btn-sm"
-                                        onClick={handleRescoreAll}
-                                        disabled={rescoring || suggestions.length === 0}
-                                        title="Rescore all existing profiles with the current scoring logic"
-                                    >{rescoring ? "Rescoring…" : "Rescore All"}</button>
                                     <button
                                         className="btn btn-ghost btn-sm"
                                         onClick={handleScanTalentPool}
@@ -771,129 +1028,22 @@ export default function RequirementDetail() {
                                 jdId={id!}
                                 jobRole={req.job_role ?? req.requirement_name}
                                 onSubmit={handleSubmitProfile}
+                                currentUserId={user?.id}
+                                isAdmin={isAdmin}
                             />
                         </>
                     )}
                 </div>
             )}
 
-            {/* ── Admin: unified submissions ── */}
-            {isAdmin && (() => {
-                const profileByCandidate = Object.fromEntries(
-                    suggestions.map(p => [String(p.candidate_uuid), p])
-                );
-                return (
-                    <div className="detail-section">
-                        <div className="detail-section-title">Submissions</div>
-                        {applications.length === 0 ? (
-                            <div className="data-table-wrap">
-                                <div className="table-empty">
-                                    <div className="table-empty-icon"><Icon name="user" size={48} /></div>
-                                    No submissions yet.
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="data-table-wrap">
-                                <table className="data-table" style={{ tableLayout: "fixed", width: "100%" }}>
-                                    <colgroup>
-                                        <col style={{ width: "24%" }} />
-                                        <col style={{ width: "13%" }} />
-                                        <col style={{ width: "10%" }} />
-                                        <col style={{ width: "25%" }} />
-                                        <col style={{ width: "14%" }} />
-                                        <col style={{ width: "14%" }} />
-                                    </colgroup>
-                                    <thead>
-                                        <tr>
-                                            <th>Candidate</th>
-                                            <th>Status</th>
-                                            <th>AI Score</th>
-                                            <th>Comments</th>
-                                            <th>Submitted</th>
-                                            <th>Action</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {applications.map((app) => {
-                                            const prof = profileByCandidate[String(app.candidate_id)];
-                                            const isManual = app.source !== "talent_pool";
-                                            const uploadedBy = prof?.uploaded_by_name || prof?.recruiter_name;
-                                            const updatedBy = prof?.uploaded_by_name && prof?.recruiter_name !== prof?.uploaded_by_name
-                                                ? prof.recruiter_name : null;
-                                            return (
-                                                <tr
-                                                    key={app.id}
-                                                    onClick={() => setCommentsApp(app)}
-                                                    style={{ cursor: "pointer", transition: "background 0.2s" }}
-                                                    onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-secondary)"}
-                                                    onMouseLeave={(e) => e.currentTarget.style.background = ""}
-                                                >
-                                                    <td style={{ wordBreak: "break-word" }}>
-                                                        <strong>{app.candidate_name || "—"}</strong>
-                                                        {isManual && uploadedBy && (
-                                                            <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
-                                                                Uploaded by {uploadedBy}
-                                                                {updatedBy && <span> · Updated by {updatedBy}</span>}
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                    <td><StatusBadge status={app.status} /></td>
-                                                    <td>{app.ai_score != null ? <span className="font-mono">{app.ai_score}/100</span> : <span className="text-muted">—</span>}</td>
-                                                    <td className="text-sm">
-                                                        {(app.recruiter_comments || app.rejection_reason)
-                                                            ? <span style={{ fontSize: "12px", color: "var(--accent)", textDecoration: "underline" }}>View</span>
-                                                            : <span className="text-muted">—</span>}
-                                                    </td>
-                                                    <td className="text-muted text-sm">{new Date(app.sent_at).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}</td>
-                                                    <td>
-                                                        {getNextStatuses(app.status).length > 0 && (
-                                                            <button
-                                                                className="btn btn-ghost btn-sm"
-                                                                onClick={(e) => { e.stopPropagation(); setSelectedApp(app); setNewStatus(""); setRejectionReason(""); setStatusNotes(""); setStatusError(""); }}
-                                                            >Update</button>
-                                                        )}
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-                    </div>
-                );
-            })()}
-
-            {/* Comments popup */}
-            {commentsApp && (
-                <div className="modal-overlay" onClick={() => setCommentsApp(null)}>
-                    <div className="modal-box" style={{ maxWidth: "460px" }} onClick={(e) => e.stopPropagation()}>
-                        <div className="modal-title">Comments — {commentsApp.candidate_name || "Candidate"}</div>
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", margin: "0.5rem 0 1rem" }}>
-                            <StatusBadge status={commentsApp.status} />
-                        </div>
-                        {commentsApp.recruiter_comments && (
-                            <div style={{ marginBottom: "1rem" }}>
-                                <div className="text-sm" style={{ fontWeight: 600, marginBottom: "0.3rem", color: "var(--text-secondary)" }}>Recruiter Comments</div>
-                                <p className="text-sm" style={{ whiteSpace: "pre-wrap", color: "var(--text-primary)", margin: 0 }}>{commentsApp.recruiter_comments}</p>
-                            </div>
-                        )}
-                        {commentsApp.rejection_reason && (
-                            <div>
-                                <div className="text-sm" style={{ fontWeight: 600, marginBottom: "0.3rem", color: "var(--text-secondary)" }}>Rejection Reason</div>
-                                <p className="text-sm" style={{ whiteSpace: "pre-wrap", color: "var(--text-primary)", margin: 0 }}>- {commentsApp.rejection_reason}</p>
-                            </div>
-                        )}
-                        {(!commentsApp.recruiter_comments && !commentsApp.rejection_reason) && (
-                            <div className="text-sm text-muted" style={{ textAlign: "center", margin: "1rem 0" }}>
-                                No review details submitted for this candidate yet.
-                            </div>
-                        )}
-                        <div className="modal-actions" style={{ marginTop: "1.25rem" }}>
-                            <button className="btn btn-primary" onClick={() => setCommentsApp(null)}>Close</button>
-                        </div>
-                    </div>
-                </div>
+            {/* Submission detail modal */}
+            {selectedSub && (
+                <SubmissionDetailModal
+                    app={selectedSub.app}
+                    prof={selectedSub.prof}
+                    isAdmin={isAdmin}
+                    onClose={() => setSelectedSub(null)}
+                />
             )}
 
             {/* Status change modal */}
@@ -1022,6 +1172,8 @@ export default function RequirementDetail() {
                                 <option value="OPEN">OPEN</option>
                                 <option value="ON_HOLD">ON HOLD</option>
                                 <option value="CLOSED">CLOSED</option>
+                                <option value="POSITION_CLOSED">POSITION CLOSED</option>
+                                <option value="ARCHIVED">ARCHIVE</option>
                             </select>
                         </div>
 
