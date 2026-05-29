@@ -28,7 +28,6 @@ import Analytics from "./pages/Analytics";
 import TeamManagement from "./pages/TeamManagement";
 import EmailResumes from "./components/EmailResume";
 import LinkedInSearchPage from "./pages/LinkedInSearchPage";
-import TestTools from "./pages/TestTools";
 
 function App() {
   return (
@@ -87,11 +86,6 @@ function App() {
           {/* New Email Resumes Page */}
           <Route path="/email-resumes" element={<EmailResumes />} />
           <Route path="/linkedin-search" element={<LinkedInSearchPage />} />
-          <Route path="/test-tools" element={
-            <ProtectedRoute adminOnly>
-              <TestTools />
-            </ProtectedRoute>
-          } />
 
         </Route>
 

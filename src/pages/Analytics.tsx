@@ -11,7 +11,7 @@ interface FilterCtxShape {
 const FilterCtx = createContext<FilterCtxShape>({
     applied: { client: "", search: "", status: "", recruiterId: "" },
     recruiterOptions: [],
-    setRecruiterOptions: () => {},
+    setRecruiterOptions: () => { },
 });
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
@@ -461,17 +461,6 @@ function SubmissionDetailModal({ sub, isAdmin, onClose }: { sub: any; isAdmin: b
             style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.52)", display: "flex", alignItems: "center", justifyContent: "center", padding: "1.5rem" }}
             onClick={onClose}
         >
-            <div className="filter-bar" style={{ marginBottom: "1rem" }}>
-                <select value={clientFilter} onChange={e => setClientFilter(e.target.value)} style={{ minWidth: 180 }}>
-                    <option value="">All clients</option>
-                    {clients.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-                <input
-                    type="text" placeholder="Search by role or req ID…"
-                    value={search} onChange={e => setSearch(e.target.value)}
-                    style={{ minWidth: 220 }}
-                />
-            </div>
             <div
                 style={{ background: "var(--bg-primary)", borderRadius: 14, boxShadow: "0 24px 80px rgba(0,0,0,0.35)", width: "100%", maxWidth: 560, maxHeight: "85vh", display: "flex", flexDirection: "column", overflow: "hidden", border: "1px solid var(--border-subtle)" }}
                 onClick={e => e.stopPropagation()}
@@ -1042,7 +1031,7 @@ export default function Analytics() {
                 const names = [...new Set((rows || []).map((r: any) => r.company_name).filter(Boolean))].sort() as string[];
                 setClientOptions(names);
             })
-            .catch(() => {});
+            .catch(() => { });
     }, []);
 
     const handleApply = () => setApplied({ ...draft });
