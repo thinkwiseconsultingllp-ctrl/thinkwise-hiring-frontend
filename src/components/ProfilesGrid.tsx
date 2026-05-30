@@ -389,7 +389,7 @@ export default function ProfilesGrid({ profiles, jdId, jobRole, currentUserId, i
                                 </td>
                                 <td style={{ fontSize: 12, overflow: "hidden", maxWidth: 0 }}>
                                     <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                        <span style={{ fontWeight: 500 }}>{firstName(p.recruiter_name)}</span>
+                                        <span style={{ fontWeight: 500 }}>{p.uploaded_by_name || "—"}</span>
                                         <span style={{ color: "var(--text-muted)", fontWeight: 400 }}> · {p?.sourced_by?.source === "manual" ? "Manual" : "Pool"}</span>
                                         {ownershipExpiry(p) && (
                                             <span style={{ color: "var(--text-muted)", fontWeight: 400 }}> · until {ownershipExpiry(p)}</span>

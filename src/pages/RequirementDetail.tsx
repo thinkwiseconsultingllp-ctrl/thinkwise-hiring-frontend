@@ -75,6 +75,8 @@ interface Requirement {
     years_of_experience: string | null;
     max_years_experience: string | null;
     mode_of_work: string | null;
+    no_of_positions?: number | null;
+    budget_range?: string | null;
     sla_hours_to_first_submission?: number | null;
     sla_timezone?: string | null;
     sla_status?: string | null;
@@ -317,6 +319,8 @@ export default function RequirementDetail() {
         years_of_experience: string;
         max_years_experience: string;
         mode_of_work: string;
+        no_of_positions: string;
+        budget_range: string;
         special_instructions: string;
     } | null>(null);
     const [editSaving, setEditSaving] = useState(false);
@@ -344,6 +348,8 @@ export default function RequirementDetail() {
             years_of_experience: req.years_of_experience || "",
             max_years_experience: req.max_years_experience || "",
             mode_of_work: req.mode_of_work || "",
+            no_of_positions: req.no_of_positions != null ? String(req.no_of_positions) : "",
+            budget_range: req.budget_range || "",
             special_instructions: req.special_instructions || "",
         });
         setEditErr(null);
@@ -364,6 +370,8 @@ export default function RequirementDetail() {
                 years_of_experience: editFields.years_of_experience.trim() || null,
                 max_years_experience: editFields.max_years_experience.trim() || null,
                 mode_of_work: editFields.mode_of_work.trim() || null,
+                no_of_positions: editFields.no_of_positions ? parseInt(editFields.no_of_positions, 10) : null,
+                budget_range: editFields.budget_range.trim() || null,
                 special_instructions: editFields.special_instructions.trim() || null,
             });
             setReq(updated);
@@ -833,6 +841,8 @@ export default function RequirementDetail() {
                             { key: "years_of_experience", label: "Min Experience" },
                             { key: "max_years_experience", label: "Max Experience" },
                             { key: "notice_period", label: "Notice Period" },
+                            { key: "no_of_positions", label: "No. of Positions" },
+                            { key: "budget_range", label: "Budget Range" },
                         ] as { key: keyof typeof editFields; label: string }[]).map(({ key, label }) => (
                             <div key={key}>
                                 <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>{label}</label>

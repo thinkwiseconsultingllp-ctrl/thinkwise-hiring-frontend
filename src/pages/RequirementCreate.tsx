@@ -43,23 +43,24 @@ function ClientCombobox({ value, onChange }: { value: string; onChange: (v: stri
                 style={{ width: "100%" }}
             />
             {open && filtered.length > 0 && (
-                <div style={{
-                    position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100,
-                    background: "var(--bg-card)", border: "1px solid var(--border-subtle)",
-                    borderRadius: "var(--radius-sm)", boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+                <div className="client-combobox-dropdown" style={{
+                    position: "absolute", top: "100%", left: 0, right: 0, zIndex: 9999,
+                    background: "#ffffff", border: "1px solid #d1d5db",
+                    borderRadius: 6, boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
                     maxHeight: 220, overflowY: "auto", marginTop: 2,
                 }}>
                     {filtered.map(c => (
                         <div
                             key={c}
+                            className="client-combobox-option"
                             onMouseDown={e => { e.preventDefault(); onChange(c); setOpen(false); }}
                             style={{
                                 padding: "0.5rem 0.85rem", fontSize: 13, cursor: "pointer",
-                                color: c === value ? "var(--primary)" : "var(--text-primary)",
+                                color: c === value ? "var(--primary)" : "#1e293b",
                                 fontWeight: c === value ? 600 : 400,
                                 background: "transparent",
                             }}
-                            onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-secondary)")}
+                            onMouseEnter={e => (e.currentTarget.style.background = "#f1f5f9")}
                             onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                         >
                             {c}
@@ -107,6 +108,8 @@ const INITIAL_FORM = {
     mode_of_work: "",
     client_spoc_name: "",
     sla_hours_to_first_submission: "48",
+    no_of_positions: "",
+    budget_range: "",
 };
 
 const REQUIREMENT_TEMPLATES: Record<string, Partial<typeof INITIAL_FORM>> = {
@@ -338,6 +341,8 @@ export default function RequirementCreate() {
                 payload.append("years_of_experience", form.years_of_experience || "");
                 payload.append("max_years_experience", form.max_years_experience || "");
                 payload.append("mode_of_work", form.mode_of_work || "");
+                if (form.no_of_positions) payload.append("no_of_positions", form.no_of_positions);
+                payload.append("budget_range", form.budget_range || "");
                 payload.append("jd_file", jdFile);
                 if (parsedJd?.all_skills?.length) {
                     payload.append("all_skills_json", JSON.stringify(parsedJd.all_skills));
@@ -358,6 +363,8 @@ export default function RequirementCreate() {
                     years_of_experience: form.years_of_experience || null,
                     max_years_experience: form.max_years_experience || null,
                     mode_of_work: form.mode_of_work || null,
+                    no_of_positions: form.no_of_positions ? parseInt(form.no_of_positions, 10) : null,
+                    budget_range: form.budget_range || null,
                 };
                 const created = await api.post("/requirements", payload);
                 navigate(`/requirements/${created.id}`);
@@ -471,13 +478,13 @@ export default function RequirementCreate() {
                             value={form.jd}
                             onChange={(e) => update("jd", e.target.value)}
                             rows={8}
-                            style={{ 
-                                width: "100%", 
-                                padding: "0.75rem", 
-                                borderRadius: "8px", 
-                                border: "1px solid var(--border-subtle)", 
-                                background: "var(--bg-primary)", 
-                                color: "var(--fg-primary)", 
+                            style={{
+                                width: "100%",
+                                padding: "0.75rem",
+                                borderRadius: "8px",
+                                border: "1px solid var(--border-subtle)",
+                                background: "var(--bg-primary)",
+                                color: "var(--fg-primary)",
                                 fontFamily: "inherit",
                                 resize: "vertical"
                             }}
@@ -615,6 +622,29 @@ export default function RequirementCreate() {
                                     <option key={mode} value={mode}>{mode}</option>
                                 ))}
                             </select>
+                        </div>
+                    </div>
+
+                    <div className="form-row">
+                        <div className="form-group">
+                            <label>No. of Positions</label>
+                            <input
+                                type="number"
+                                min={1}
+                                step={1}
+                                placeholder="e.g. 3"
+                                value={form.no_of_positions}
+                                onChange={(e) => update("no_of_positions", e.target.value)}
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label>Budget Range</label>
+                            <input
+                                type="text"
+                                placeholder="e.g. 15–25 LPA"
+                                value={form.budget_range}
+                                onChange={(e) => update("budget_range", e.target.value)}
+                            />
                         </div>
                     </div>
 

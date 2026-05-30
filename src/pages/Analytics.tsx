@@ -369,56 +369,65 @@ function TrackerTab() {
     return (
         <>
             <div className="data-table-wrap">
-                <table className="data-table" style={{ tableLayout: "fixed", width: "100%" }}>
-                    <colgroup>
-                        <col style={{ width: "8%" }} /><col style={{ width: "13%" }} /><col style={{ width: "16%" }} />
-                        <col style={{ width: "6%" }} /><col style={{ width: "10%" }} /><col style={{ width: "8%" }} />
-                        <col style={{ width: "8%" }} /><col style={{ width: "13%" }} /><col style={{ width: "14%" }} />
-                        <col style={{ width: "6%" }} /><col style={{ width: "8%" }} /><col style={{ width: "7%" }} />
-                        <col style={{ width: "7%" }} /><col style={{ width: "7%" }} /><col style={{ width: "6%" }} />
-                        <col style={{ width: "7%" }} /><col style={{ width: "7%" }} /><col style={{ width: "4%" }} />
-                    </colgroup>
-                    <thead>
-                        <tr>
-                            <th>Req ID</th><th>Client</th><th>Role</th><th>Type</th>
-                            <Th k="sla_status" label="SLA" /><Th k="submitted" label="Subm." />
-                            <Th k="in_interview" label="Intvw" /><Th k="selected" label="Sel." />
-                            <Th k="joined" label="Jnd" /><Th k="status" label="Status" />
-                            <th>Assigned</th><th></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {loading ? <SkeletonRows cols={12} /> : sorted.length === 0 ? (
-                            <tr><td colSpan={12} className="table-empty">No requirements found.</td></tr>
-                        ) : sorted.map(r => (
-                            <tr key={r.id} style={{ cursor: "pointer" }}
-                                onClick={(e) => { if (e.ctrlKey || e.metaKey) { window.open(`/requirements/${r.id}`, '_blank'); } else { navigate(`/requirements/${r.id}`); } }}>
-                                <td><span style={{ fontSize: 11, fontFamily: "monospace", color: "var(--accent)" }}>{r.req_id}</span></td>
-                                <td style={{ fontWeight: 500 }}>{r.company_name || "—"}</td>
-                                <td>
-                                    <div style={{ fontSize: 13 }}>{r.requirement_name}</div>
-                                    {r.years_of_experience && <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{r.years_of_experience} yrs</div>}
-                                </td>
-                                <td>
-                                    {r.is_rollover
-                                        ? <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: "#fef3c7", color: "#92400e", border: "1px solid #fde68a" }}>Rollover</span>
-                                        : <span style={{ color: "var(--text-muted)", fontSize: 12 }}>—</span>}
-                                </td>
-                                <td><SlaChip status={r.sla_status} /></td>
-                                <td><PillCount n={r.submitted} color="#3b82f6" /></td>
-                                <td><PillCount n={r.in_interview} color="#8b5cf6" /></td>
-                                <td><PillCount n={r.selected} color="#16a34a" /></td>
-                                <td><PillCount n={r.joined} color="#0891b2" /></td>
-                                <td><StatusBadge status={r.status} /></td>
-                                <td><AssignedPopover names={r.assigned_recruiters || []} /></td>
-                                <td onClick={e => e.stopPropagation()}>
-                                    <a href={`/requirements/${r.id}`} target="_blank" rel="noreferrer" title="Open in new tab"
-                                        style={{ fontSize: 14, color: "var(--text-muted)", textDecoration: "none", padding: "2px 4px", display: "inline-block" }}>↗</a>
-                                </td>
+                <div style={{ overflowX: "auto" }}>
+                    <table className="data-table" style={{ tableLayout: "fixed", width: "100%", minWidth: 900 }}>
+                        <colgroup>
+                            <col style={{ width: "8%" }} />
+                            <col style={{ width: "14%" }} />
+                            <col style={{ width: "18%" }} />
+                            <col style={{ width: "5%" }} />
+                            <col style={{ width: "10%" }} />
+                            <col style={{ width: "7%" }} />
+                            <col style={{ width: "7%" }} />
+                            <col style={{ width: "7%" }} />
+                            <col style={{ width: "6%" }} />
+                            <col style={{ width: "9%" }} />
+                            <col style={{ width: "9%" }} />
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th>Req ID</th><th>Client</th><th>Role</th><th>Type</th>
+                                <Th k="sla_status" label="SLA" /><Th k="submitted" label="Subm." />
+                                <Th k="in_interview" label="Intvw" /><Th k="selected" label="Sel." />
+                                <Th k="joined" label="Jnd" /><Th k="status" label="Status" />
+                                <th>Assigned</th>
                             </tr>
-                        ))}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            {loading ? <SkeletonRows cols={11} /> : sorted.length === 0 ? (
+                                <tr><td colSpan={11} className="table-empty">No requirements found.</td></tr>
+                            ) : sorted.map(r => (
+                                <tr key={r.id} style={{ cursor: "pointer" }}
+                                    onClick={() => navigate(`/requirements/${r.id}`)}>
+                                    <td>
+                                        <a href={`/requirements/${r.id}`}
+                                            onClick={e => e.preventDefault()}
+                                            style={{ fontSize: 11, fontFamily: "monospace", color: "var(--accent)", textDecoration: "none" }}>
+                                            {r.req_id}
+                                        </a>
+                                    </td>
+                                    <td style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.company_name || "—"}</td>
+                                    <td style={{ overflow: "hidden" }}>
+                                        <div style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.requirement_name}</div>
+                                        {r.years_of_experience && <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{r.years_of_experience} yrs</div>}
+                                    </td>
+                                    <td>
+                                        {r.is_rollover
+                                            ? <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: "#fef3c7", color: "#92400e", border: "1px solid #fde68a" }}>Rollover</span>
+                                            : <span style={{ color: "var(--text-muted)", fontSize: 12 }}>—</span>}
+                                    </td>
+                                    <td><SlaChip status={r.sla_status} /></td>
+                                    <td><PillCount n={r.submitted} color="#3b82f6" /></td>
+                                    <td><PillCount n={r.in_interview} color="#8b5cf6" /></td>
+                                    <td><PillCount n={r.selected} color="#16a34a" /></td>
+                                    <td><PillCount n={r.joined} color="#0891b2" /></td>
+                                    <td><StatusBadge status={r.status} /></td>
+                                    <td><AssignedPopover names={r.assigned_recruiters || []} /></td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </>
     );

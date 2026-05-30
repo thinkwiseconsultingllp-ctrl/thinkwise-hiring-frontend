@@ -76,6 +76,8 @@ export default function JdSidePanel() {
                         <Field label="Location" value={r.location} />
                         <Field label="Experience" value={r.years_of_experience} />
                         <Field label="Notice Period" value={r.notice_period} />
+                        <Field label="No. of Positions" value={r.no_of_positions} />
+                        <Field label="Budget Range" value={r.budget_range} />
                         <Field label="Client SPOC" value={r.client_spoc_name} />
                         <Field label="SLA" value={sla} />
                         <Field label="Deadline" value={deadline} />

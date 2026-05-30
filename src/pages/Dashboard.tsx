@@ -42,7 +42,8 @@ function NotificationsFeed({ navigate }: { navigate: (path: string) => void }) {
     const { data: notifs = [], isLoading } = useQuery<Notification[]>({
         queryKey: ["notifications"],
         queryFn: () => api.get("/notifications").then((r: any) => r || []),
-        staleTime: 30_000,
+        staleTime: 5 * 60 * 1000,
+        retry: false,
     });
 
     if (isLoading) return null;
@@ -474,6 +475,8 @@ export default function Dashboard() {
     const { data: requirements = [], isLoading: loading } = useQuery<Requirement[]>({
         queryKey: ["requirements"],
         queryFn: () => api.get("/requirements").then((r: any) => r || []),
+        staleTime: 30 * 1000,
+        gcTime: 5 * 60 * 1000,
     });
 
     const { data: pendingRequestIds = [] } = useQuery<string[]>({

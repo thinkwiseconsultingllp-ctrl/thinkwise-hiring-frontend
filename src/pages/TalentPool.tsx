@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import Icon from "../components/Icon";
@@ -28,6 +29,7 @@ type Candidate = {
   resume_filename?: string | null;
   created_at: string;
   structured_with_ai?: boolean | null;
+  uploaded_by_name?: string;
 };
 
 function getDisplayRole(c: Candidate): string | null {
@@ -39,6 +41,7 @@ function getDisplayRole(c: Candidate): string | null {
 
 export default function TalentPool() {
   const { isAdmin, isRecruiter, user } = useAuth();
+  const navigate = useNavigate();
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -282,9 +285,9 @@ export default function TalentPool() {
       const mine = isAdmin
         ? reqs.filter(r => !["DELETED", "CLOSED"].includes((r as any).status))
         : reqs.filter(r =>
-            !["DELETED", "CLOSED"].includes((r as any).status) &&
-            (r.assigned_recruiters || []).includes(user?.id || "")
-          );
+          !["DELETED", "CLOSED"].includes((r as any).status) &&
+          (r.assigned_recruiters || []).includes(user?.id || "")
+        );
       setRequirements(mine);
     } catch {
       setRequirements([]);
@@ -542,8 +545,8 @@ export default function TalentPool() {
                 className={`talent-card ${selectedIdSet.has(candidate.id) ? "talent-card--selected" : ""}`}
                 role="button"
                 tabIndex={0}
-                onClick={() => window.open(`/talent-pool/${candidate.id}`, "_blank")}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); window.open(`/talent-pool/${candidate.id}`, "_blank"); } }}
+                onClick={(e) => { if (e.ctrlKey || e.metaKey) { window.open(`/talent-pool/${candidate.id}`, '_blank'); } else { navigate(`/talent-pool/${candidate.id}`); } }}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (e.ctrlKey || e.metaKey) { window.open(`/talent-pool/${candidate.id}`, '_blank'); } else { navigate(`/talent-pool/${candidate.id}`); } } }}
               >
                 <div className="talent-card-actions">
                   <label className="talent-select-toggle" onClick={(e) => e.stopPropagation()}>
@@ -565,6 +568,11 @@ export default function TalentPool() {
                 {displayRole && <div className="talent-role">{displayRole}</div>}
                 <div className="talent-meta-row">
                   <span>{candidate.experience_label || "-"}</span>
+                  {candidate.uploaded_by_name && (
+                    <span style={{ color: "var(--text-secondary)", fontSize: 11 }}>
+                      · Sourced by <strong>{candidate.uploaded_by_name}</strong>
+                    </span>
+                  )}
                 </div>
                 {candidate.resume_filename && <div className="talent-file" title={candidate.resume_filename}>{candidate.resume_filename}</div>}
               </div>
