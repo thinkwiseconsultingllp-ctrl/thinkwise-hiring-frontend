@@ -276,7 +276,7 @@ export default function ProfilesGrid({ profiles, jdId, jobRole, currentUserId, i
                         >
                             Exp {sort.key === "exp" && (sort.dir === "desc" ? "▼" : "▲")}
                         </th>
-                        <th style={{ fontSize: 12, fontWeight: 600 }}>Sourced by</th>
+                        <th style={{ fontSize: 12, fontWeight: 600 }}>Owned by</th>
                         <th style={{ fontSize: 12, fontWeight: 600 }}>Actions</th>
                     </tr>
                 </thead>
@@ -347,7 +347,7 @@ export default function ProfilesGrid({ profiles, jdId, jobRole, currentUserId, i
                                     )}
                                     {sentAt && (
                                         <div style={{ fontSize: 11, color: "#16a34a", marginTop: "0.1rem", whiteSpace: "nowrap", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis" }}>
-                                            by {firstName(p.recruiter_name)} · {fmtTs(sentAt)}
+                                            Submitted by {firstName(p.recruiter_name)} · {fmtTs(sentAt)}
                                         </div>
                                     )}
                                     {pastSubs.length > 0 && (
@@ -390,7 +390,20 @@ export default function ProfilesGrid({ profiles, jdId, jobRole, currentUserId, i
                                 <td style={{ fontSize: 12, overflow: "hidden", maxWidth: 0 }}>
                                     <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                         <span style={{ fontWeight: 500 }}>{p.uploaded_by_name || "—"}</span>
-                                        <span style={{ color: "var(--text-muted)", fontWeight: 400 }}> · {p?.sourced_by?.source === "manual" ? "Manual" : "Pool"}</span>
+                                        {(() => {
+                                            const src = p?.sourced_by?.source;
+                                            const label = src === "email" ? "Email" : src === "manual" ? "Manual" : "Pool";
+                                            const style: React.CSSProperties = src === "email"
+                                                ? { background: "#dbeafe", color: "#1d4ed8", border: "1px solid #bfdbfe" }
+                                                : src === "manual"
+                                                    ? { background: "#dcfce7", color: "#166534", border: "1px solid #bbf7d0" }
+                                                    : { background: "var(--bg-secondary)", color: "var(--text-muted)", border: "1px solid var(--border-subtle)" };
+                                            return (
+                                                <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 5px", borderRadius: 3, marginLeft: 5, flexShrink: 0, ...style }}>
+                                                    {label}
+                                                </span>
+                                            );
+                                        })()}
                                         {ownershipExpiry(p) && (
                                             <span style={{ color: "var(--text-muted)", fontWeight: 400 }}> · until {ownershipExpiry(p)}</span>
                                         )}

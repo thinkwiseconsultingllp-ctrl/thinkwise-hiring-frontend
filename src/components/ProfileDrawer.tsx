@@ -500,9 +500,9 @@ function CommentsSection({ profile, jdId, onUpdated }: { profile: Profile; jdId:
                                 };
                                 const statusColor = h.status === "SELECTED" || h.status === "JOINED" ? "#16a34a"
                                     : h.status === "REJECTED" ? "#dc2626"
-                                    : h.status === "SENT" ? "#2563eb"
-                                    : h.status ? "#ca8a04"
-                                    : "var(--text-muted)";
+                                        : h.status === "SENT" ? "#2563eb"
+                                            : h.status ? "#ca8a04"
+                                                : "var(--text-muted)";
                                 return (
                                     <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.4rem 0.6rem", background: "var(--bg-secondary)", borderRadius: 6, border: "1px solid var(--border-subtle)" }}>
                                         <div style={{ flex: 1, minWidth: 0 }}>
@@ -747,7 +747,8 @@ function ReviewPanel({ profile, jdId }: { profile: Profile; jdId: string }) {
     const currentCompany = det.current_company || mostRecent.Company || "—";
     const name = cand.Name || det.candidate_name || "—";
     const totalExp = det.total_experience_years != null ? `${det.total_experience_years} yr` : "—";
-    const sourceLabel = profile.sourced_by?.source === "manual" ? "Manual upload" : "Talent pool";
+    const src = profile.sourced_by?.source;
+    const sourceLabel = src === "manual" ? "Manual upload" : src === "email" ? "Email sync" : "Talent pool";
 
     const [fields, setFields] = useState({
         current_ctc: cand.current_ctc != null ? String(cand.current_ctc) : "",
@@ -820,7 +821,7 @@ function ReviewPanel({ profile, jdId }: { profile: Profile; jdId: string }) {
             </div>
 
             <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "0.75rem", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.65rem" }}>
-                <Row label="Sourced by" value={profile.recruiter_name || "—"} />
+                <Row label="Owned by" value={profile.uploaded_by_name || "—"} />
                 <Row label="Sourced from" value={sourceLabel} />
             </div>
 
@@ -925,96 +926,102 @@ export default function ProfileDrawer({ jdId, profile, action, initialTab, onUpd
 
     return (
         <>
-        <div
-            onClick={drawer.close}
-            style={{ position: "fixed", inset: 0, zIndex: 999, background: "rgba(0,0,0,0.18)" }}
-        />
-        <aside
-            style={{
-                position: "fixed", top: 0, right: 0, bottom: 0,
-                width: "min(45vw, 640px)",
-                background: "var(--bg-primary)",
-                borderLeft: "1px solid var(--border-subtle)",
-                boxShadow: "-4px 0 16px rgba(0,0,0,0.08)",
-                zIndex: 1000,
-                display: "flex", flexDirection: "column",
-            }}
-        >
-            <header style={{ padding: "0.85rem 1.1rem", borderBottom: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {name}
-                        {headerLabel && <span style={{ fontSize: 12, fontWeight: 400, color: "var(--text-secondary)", marginLeft: "0.5rem" }}>— {headerLabel}</span>}
+            <div
+                onClick={drawer.close}
+                style={{ position: "fixed", inset: 0, zIndex: 999, background: "rgba(0,0,0,0.18)" }}
+            />
+            <aside
+                style={{
+                    position: "fixed", top: 0, right: 0, bottom: 0,
+                    width: "min(45vw, 640px)",
+                    background: "var(--bg-primary)",
+                    borderLeft: "1px solid var(--border-subtle)",
+                    boxShadow: "-4px 0 16px rgba(0,0,0,0.08)",
+                    zIndex: 1000,
+                    display: "flex", flexDirection: "column",
+                }}
+            >
+                <header style={{ padding: "0.85rem 1.1rem", borderBottom: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {name}
+                            {headerLabel && <span style={{ fontSize: 12, fontWeight: 400, color: "var(--text-secondary)", marginLeft: "0.5rem" }}>— {headerLabel}</span>}
+                        </div>
+                        <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                            {score != null && <>Match <strong>{score}%</strong></>}
+                            {aiScore != null && <> · AI <strong>{aiScore}/100</strong></>}
+                            {(score != null || aiScore != null) && " · "}
+                            {(() => {
+                                const s = profile.sourced_by?.source;
+                                const owner = profile.uploaded_by_name || profile.recruiter_name || "—";
+                                return s === "manual"
+                                    ? <>Manual upload · Owned by <strong>{owner}</strong></>
+                                    : s === "email"
+                                        ? <>Email sync · Owned by <strong>{owner}</strong></>
+                                        : <>From talent pool · Owned by <strong>{owner}</strong></>;
+                            })()}
+                        </div>
                     </div>
-                    <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                        {score != null && <>Match <strong>{score}%</strong></>}
-                        {aiScore != null && <> · AI <strong>{aiScore}/100</strong></>}
-                        {(score != null || aiScore != null) && " · "}
-                        {profile.sourced_by?.source === "manual"
-                            ? <>Manual upload by <strong>{profile.recruiter_name || "—"}</strong></>
-                            : <>From talent pool · <strong>{profile.recruiter_name || "—"}</strong></>}
-                    </div>
-                </div>
-                <button
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => navigate(`/requirements/${jdId}/profiles/${profile.candidate_uuid}`)}
-                    title="Open in full screen"
-                >Full View</button>
-                <button
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => drawer.openResume(profile.candidate_uuid, name)}
-                    title="View resume"
-                >Resume</button>
-                <button
-                    className="btn btn-ghost btn-sm"
-                    onClick={drawer.close}
-                    title="Close"
-                    style={{ padding: "4px 8px" }}
-                >×</button>
-            </header>
+                    <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => navigate(`/requirements/${jdId}/profiles/${profile.candidate_uuid}`)}
+                        title="Open in full screen"
+                    >Full View</button>
+                    <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => drawer.openResume(profile.candidate_uuid, name)}
+                        title="View resume"
+                    >Resume</button>
+                    <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={drawer.close}
+                        title="Close"
+                        style={{ padding: "4px 8px" }}
+                    >×</button>
+                </header>
 
-            {action === "view" && (
-                <nav style={{ padding: "0.6rem 1.1rem", borderBottom: "1px solid var(--border-subtle)", display: "flex", gap: "0.4rem", overflowX: "auto" }}>
-                    {viewTabs.map(t => (
-                        <button
-                            key={t.key}
-                            onClick={() => setTab(t.key)}
-                            style={{
-                                padding: "4px 12px", borderRadius: 999, border: "1px solid var(--border-subtle)",
-                                background: tab === t.key ? "var(--accent)" : "transparent",
-                                color: tab === t.key ? "#fff" : "var(--text-secondary)",
-                                cursor: "pointer", fontSize: 13, fontWeight: tab === t.key ? 600 : 400,
-                                whiteSpace: "nowrap",
-                            }}
-                        >{t.label}</button>
-                    ))}
-                </nav>
-            )}
-
-            <div style={{ flex: 1, overflow: "auto", padding: "1rem 1.1rem" }}>
                 {action === "view" && (
-                    <>
-                        {tab === "overview" && <OverviewSection profile={profile} />}
-                        {tab === "deterministic" && <DeterministicSection profile={profile} />}
-                        {tab === "llm" && (
-                            <LlmSection profile={profile} jdId={jdId} onUpdated={(next) => {
-                                drawer.patchProfile(next);
-                                window.dispatchEvent(new CustomEvent("tw-profile-updated", { detail: { profile: next, jdId } }));
-                            }} />
-                        )}
-                        {tab === "comments" && (
-                            <CommentsSection profile={profile} jdId={jdId} onUpdated={() => { void refreshProfile(); }} />
-                        )}
-                    </>
+                    <nav style={{ padding: "0.6rem 1.1rem", borderBottom: "1px solid var(--border-subtle)", display: "flex", gap: "0.4rem", overflowX: "auto" }}>
+                        {viewTabs.map(t => (
+                            <button
+                                key={t.key}
+                                onClick={() => setTab(t.key)}
+                                style={{
+                                    padding: "4px 12px", borderRadius: 999, border: "1px solid var(--border-subtle)",
+                                    background: tab === t.key ? "var(--accent)" : "transparent",
+                                    color: tab === t.key ? "#fff" : "var(--text-secondary)",
+                                    cursor: "pointer", fontSize: 13, fontWeight: tab === t.key ? 600 : 400,
+                                    whiteSpace: "nowrap",
+                                }}
+                            >{t.label}</button>
+                        ))}
+                    </nav>
                 )}
-                {action === "update" && (
-                    <UpdateForm profile={profile} jdId={jdId} refreshProfile={refreshProfile} />
-                )}
-                {action === "submit" && (
-                    <ReviewPanel profile={profile} jdId={jdId} />
-                )}
-            </div>
-        </aside>
+
+                <div style={{ flex: 1, overflow: "auto", padding: "1rem 1.1rem" }}>
+                    {action === "view" && (
+                        <>
+                            {tab === "overview" && <OverviewSection profile={profile} />}
+                            {tab === "deterministic" && <DeterministicSection profile={profile} />}
+                            {tab === "llm" && (
+                                <LlmSection profile={profile} jdId={jdId} onUpdated={(next) => {
+                                    drawer.patchProfile(next);
+                                    window.dispatchEvent(new CustomEvent("tw-profile-updated", { detail: { profile: next, jdId } }));
+                                }} />
+                            )}
+                            {tab === "comments" && (
+                                <CommentsSection profile={profile} jdId={jdId} onUpdated={() => { void refreshProfile(); }} />
+                            )}
+                        </>
+                    )}
+                    {action === "update" && (
+                        <UpdateForm profile={profile} jdId={jdId} refreshProfile={refreshProfile} />
+                    )}
+                    {action === "submit" && (
+                        <ReviewPanel profile={profile} jdId={jdId} />
+                    )}
+                </div>
+            </aside>
         </>
     );
 }

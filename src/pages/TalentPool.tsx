@@ -568,12 +568,27 @@ export default function TalentPool() {
                 {displayRole && <div className="talent-role">{displayRole}</div>}
                 <div className="talent-meta-row">
                   <span>{candidate.experience_label || "-"}</span>
-                  {candidate.uploaded_by_name && (
-                    <span style={{ color: "var(--text-secondary)", fontSize: 11 }}>
-                      · Sourced by <strong>{candidate.uploaded_by_name}</strong>
-                    </span>
-                  )}
+                  {(() => {
+                    const ch = (candidate as any).source_channel as string | undefined;
+                    const label = ch === "email" ? "Email" : ch === "bulk" ? "Bulk" : ch === "manual" ? "Manual" : null;
+                    const color = ch === "email" ? { bg: "#dbeafe", text: "#1d4ed8", border: "#bfdbfe" }
+                      : ch === "bulk" ? { bg: "#fef3c7", text: "#92400e", border: "#fde68a" }
+                        : ch === "manual" ? { bg: "#dcfce7", text: "#166534", border: "#bbf7d0" }
+                          : null;
+                    return label && color ? (
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 3,
+                        background: color.bg, color: color.text, border: `1px solid ${color.border}`,
+                        marginLeft: 4,
+                      }}>{label}</span>
+                    ) : null;
+                  })()}
                 </div>
+                {candidate.uploaded_by_name && (
+                  <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: "0.15rem" }}>
+                    Owned by <strong>{candidate.uploaded_by_name}</strong>
+                  </div>
+                )}
                 {candidate.resume_filename && <div className="talent-file" title={candidate.resume_filename}>{candidate.resume_filename}</div>}
               </div>
             );
