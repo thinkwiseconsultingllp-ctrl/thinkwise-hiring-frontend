@@ -1321,7 +1321,7 @@ function InterviewsTab({ isAdmin }: { isAdmin: boolean }) {
         return <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: s[1], color: s[2], border: `1px solid ${s[2]}30` }}>{s[0]}</span>;
     };
 
-    const COLS = 9; // added Warning column
+    const COLS = 10; // added Warning column and phone number
     return (
         <>
             {selectionDrawer && (
@@ -1340,21 +1340,22 @@ function InterviewsTab({ isAdmin }: { isAdmin: boolean }) {
                 />
             )}
             <div className="data-table-wrap" style={{ overflowX: "auto" }}>
-                <table className="data-table" style={{ tableLayout: "fixed", width: "100%", minWidth: 860 }}>
+                <table className="data-table" style={{ tableLayout: "fixed", width: "100%", minWidth: 960 }}>
                     <colgroup>
-                        <col style={{ width: "10%" }} />
-                        <col style={{ width: "13%" }} />
-                        <col style={{ width: "14%" }} />
                         <col style={{ width: "9%" }} />
-                        <col style={{ width: "16%" }} />
-                        <col style={{ width: "16%" }} />
-                        <col style={{ width: "16%" }} />
+                        <col style={{ width: "12%" }} />
+                        <col style={{ width: "12%" }} />
                         <col style={{ width: "10%" }} />
+                        <col style={{ width: "8%" }} />
+                        <col style={{ width: "15%" }} />
+                        <col style={{ width: "15%" }} />
+                        <col style={{ width: "15%" }} />
+                        <col style={{ width: "9%" }} />
                         <col style={{ width: "4%" }} />
                     </colgroup>
                     <thead>
                         <tr>
-                            <th>Client</th><th>Role</th><th>Candidate</th><th>Recruiter</th>
+                            <th>Client</th><th>Role</th><th>Candidate</th><th>Phone</th><th>Recruiter</th>
                             <th>L1</th><th>L2</th><th>L3 / HR</th>
                             <th>Outcome</th><th></th>
                         </tr>
@@ -1371,6 +1372,7 @@ function InterviewsTab({ isAdmin }: { isAdmin: boolean }) {
                                     <td><Trunc text={r.company_name} style={{ fontWeight: 500, fontSize: 13 }} /></td>
                                     <td><Trunc text={r.requirement_name} style={{ fontSize: 12 }} /></td>
                                     <td><Trunc text={r.candidate_name} style={{ fontWeight: 600, fontSize: 13 }} /></td>
+                                    <td><span style={{ fontSize: 12, fontFamily: "monospace", color: r.candidate_phone ? "var(--text-primary)" : "var(--text-muted)" }}>{r.candidate_phone || "—"}</span></td>
                                     <td><Trunc text={r.recruiter_name} style={{ fontSize: 12 }} /></td>
                                     <td>
                                         <RoundCell appId={r.application_id} round="L1" data={sched.L1} onSave={handleRoundSave} readOnly={!isAdmin} />
