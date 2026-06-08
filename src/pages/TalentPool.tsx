@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import Icon from "../components/Icon";
@@ -54,10 +54,21 @@ export default function TalentPool() {
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; fileName: string } | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
-  const [skillsInput, setSkillsInput] = useState("");
-  const [roleInput, setRoleInput] = useState("");
-  const [expMin, setExpMin] = useState("");
-  const [expMax, setExpMax] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [skillsInput, setSkillsInput] = useState(() => searchParams.get("skills") || "");
+  const [roleInput, setRoleInput] = useState(() => searchParams.get("role") || "");
+  const [expMin, setExpMin] = useState(() => searchParams.get("expMin") || "");
+  const [expMax, setExpMax] = useState(() => searchParams.get("expMax") || "");
+
+  // Keep URL in sync whenever filters change (replace so back-button isn't spammed).
+  useEffect(() => {
+    const p = new URLSearchParams();
+    if (skillsInput) p.set("skills", skillsInput);
+    if (roleInput) p.set("role", roleInput);
+    if (expMin) p.set("expMin", expMin);
+    if (expMax) p.set("expMax", expMax);
+    setSearchParams(p, { replace: true });
+  }, [skillsInput, roleInput, expMin, expMax]); // eslint-disable-line react-hooks/exhaustive-deps
   type DuplicateDetail = { filename: string; message: string; candidate_id?: string };
   const [skippedFiles, setSkippedFiles] = useState<DuplicateDetail[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -432,7 +443,7 @@ export default function TalentPool() {
             <button
               className="btn btn-ghost btn-sm"
               style={{ height: 34, whiteSpace: "nowrap" }}
-              onClick={() => { setSkillsInput(""); setRoleInput(""); setExpMin(""); setExpMax(""); }}
+              onClick={() => { setSkillsInput(""); setRoleInput(""); setExpMin(""); setExpMax(""); setSearchParams({}, { replace: true }); }}
             >Clear filters</button>
           ) : (
             <div style={{ height: 34 }} />

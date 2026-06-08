@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, createContext, useContext } from "react";
+import { useState, useEffect, useRef, useMemo, createContext, useContext } from "react";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { createPortal } from "react-dom";
 import type { CSSProperties } from "react";
@@ -17,7 +17,7 @@ const FilterCtx = createContext<FilterCtxShape>({
     setRecruiterOptions: () => { },
     setCounts: () => { },
 });
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { analyticsApi, api, API_BASE, getToken } from "../services/api";
 import StatusBadge from "../components/StatusBadge";
@@ -470,17 +470,21 @@ const CELL: CSSProperties = {
 
 // Shortlisted cell — collapsed shows the current value (or a gray "Update" placeholder when
 // unset); pressing it (admin only) reveals the Yes / No choices.
-function ShortlistCell({ value, editable, onChange }: { value: boolean | null; editable: boolean; onChange: (val: boolean) => void }) {
+function ShortlistCell({ value, editable, onChange }: { value: boolean | null; editable: boolean; onChange: (val: boolean | null) => void }) {
     const [open, setOpen] = useState(false);
     const base: CSSProperties = { fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 4, display: "inline-block", whiteSpace: "nowrap", border: "1px solid" };
 
     if (open && editable) {
         return (
-            <span style={{ display: "inline-flex", gap: 4 }}>
+            <span style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
                 <button onClick={() => { onChange(true); setOpen(false); }}
                     style={{ ...base, cursor: "pointer", background: "#dcfce7", color: "#16a34a", borderColor: "#16a34a" }}>✓ Yes</button>
                 <button onClick={() => { onChange(false); setOpen(false); }}
                     style={{ ...base, cursor: "pointer", background: "#fee2e2", color: "#dc2626", borderColor: "#dc2626" }}>✗ No</button>
+                {value !== null && (
+                    <button onClick={() => { onChange(null); setOpen(false); }}
+                        style={{ ...base, cursor: "pointer", background: "var(--bg-secondary)", color: "var(--text-muted)", borderColor: "var(--border-subtle)" }}>× Clear</button>
+                )}
             </span>
         );
     }
@@ -495,7 +499,7 @@ function ShortlistCell({ value, editable, onChange }: { value: boolean | null; e
     return (
         <span
             onClick={editable ? () => setOpen(true) : undefined}
-            title={editable ? "Set shortlisted" : "Set automatically from interview progress"}
+            title={editable ? "Click to set shortlisted status" : "Set automatically from interview progress"}
             style={{ ...base, ...style, cursor: editable ? "pointer" : "default" }}
         >{label}</span>
     );
@@ -503,7 +507,7 @@ function ShortlistCell({ value, editable, onChange }: { value: boolean | null; e
 
 // Focused side drawer for a submission — shows only the recruiter-submitted details
 // (already present in the list response, so no extra fetch), plus resume + comments.
-function SubmissionDrawer({ sub, isAdmin, onClose, onShortlist }: { sub: any; isAdmin: boolean; onClose: () => void; onShortlist?: (appId: string, val: boolean) => void }) {
+function SubmissionDrawer({ sub, isAdmin, onClose, onShortlist }: { sub: any; isAdmin: boolean; onClose: () => void; onShortlist?: (appId: string, val: boolean | null) => void }) {
     const [comments, setComments] = useState<any[]>([]);
     const [draft, setDraft] = useState("");
     const [posting, setPosting] = useState(false);
@@ -552,8 +556,8 @@ function SubmissionDrawer({ sub, isAdmin, onClose, onShortlist }: { sub: any; is
         return () => { cancelled = true; if (url) URL.revokeObjectURL(url); };
     }, [sub.candidate_id]);
 
-    // Shortlisted — admin/client-manager sets Yes / No. Optimistic, reverts on failure.
-    const setShortlist = async (val: boolean) => {
+    // Shortlisted — admin/client-manager sets Yes / No / null (clear). Optimistic, reverts on failure.
+    const setShortlist = async (val: boolean | null) => {
         if (savingSL || shortlisted === val) return;
         const prev = shortlisted;
         setSavingSL(true);
@@ -625,9 +629,9 @@ function SubmissionDrawer({ sub, isAdmin, onClose, onShortlist }: { sub: any; is
                     <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "0.85rem", display: "flex", alignItems: "center", gap: 12 }}>
                         <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.6px" }}>Shortlisted</div>
                         {isAdmin ? (
-                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                                 {shortlisted == null && (
-                                    <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 6, background: "var(--bg-secondary)", color: "var(--text-muted)", border: "1px solid var(--border-subtle)" }}>Update</span>
+                                    <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 6, background: "var(--bg-secondary)", color: "var(--text-muted)", border: "1px solid var(--border-subtle)" }}>Not set</span>
                                 )}
                                 <button onClick={() => setShortlist(true)} disabled={savingSL}
                                     style={{
@@ -641,6 +645,14 @@ function SubmissionDrawer({ sub, isAdmin, onClose, onShortlist }: { sub: any; is
                                         background: shortlisted === false ? "#fee2e2" : "transparent", color: "#dc2626",
                                         border: `1px solid ${shortlisted === false ? "#dc2626" : "var(--border-subtle)"}`
                                     }}>✗ No</button>
+                                {shortlisted !== null && (
+                                    <button onClick={() => setShortlist(null)} disabled={savingSL}
+                                        style={{
+                                            fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 6, cursor: "pointer",
+                                            background: "transparent", color: "var(--text-muted)",
+                                            border: "1px solid var(--border-subtle)"
+                                        }}>× Clear</button>
+                                )}
                             </div>
                         ) : (
                             <span style={{ fontSize: 12, fontWeight: 700, color: shortlisted === true ? "#16a34a" : shortlisted === false ? "#dc2626" : "var(--text-muted)" }}>
@@ -775,7 +787,7 @@ function SubmissionsTab({ isAdmin }: { isAdmin: boolean }) {
     useEffect(() => {
         setSubs([]);
         load(applied, 0, false);
-    }, [applied]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [applied.client, applied.search, applied.status, applied.recruiterId]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const displayed = applied.search
         ? subs.filter(s =>
@@ -797,8 +809,8 @@ function SubmissionsTab({ isAdmin }: { isAdmin: boolean }) {
     const loadMore = () => load(applied, subs.length, true);
     const colCount = 11; // Date Client Recruiter Role Candidate Exp CTC ExpCTC Notice Status Shortlisted
 
-    // Set shortlisted to an explicit Yes/No (optimistic, reverts on failure).
-    const setShortlistValue = async (appId: string, val: boolean) => {
+    // Set shortlisted to Yes / No, or clear to null (optimistic, reverts on failure).
+    const setShortlistValue = async (appId: string, val: boolean | null) => {
         const prev = subs.find(s => s.application_id === appId)?.client_shortlisted ?? null;
         setSubs(p => p.map(s => s.application_id === appId ? { ...s, client_shortlisted: val } : s));
         try {
@@ -808,7 +820,7 @@ function SubmissionsTab({ isAdmin }: { isAdmin: boolean }) {
         }
     };
 
-    const handleShortlistChange = (appId: string, val: boolean) => {
+    const handleShortlistChange = (appId: string, val: boolean | null) => {
         setSubs(prev => prev.map(s => s.application_id === appId ? { ...s, client_shortlisted: val } : s));
         setSelected((sel: any) => (sel && sel.application_id === appId ? { ...sel, client_shortlisted: val } : sel));
     };
@@ -924,10 +936,11 @@ function Trunc({ text, style }: { text: any; style?: React.CSSProperties }) {
     );
 }
 
-function RoundCell({ appId, round, data, onSave, readOnly }: {
+function RoundCell({ appId, round, data, onSave, readOnly, onPassedFinal }: {
     appId: string; round: string; data: any;
     onSave: (appId: string, round: string, patch: any) => Promise<void>;
     readOnly?: boolean;
+    onPassedFinal?: () => void;
 }) {
     const savedOutcome = data?.outcome || "";
     const savedStatus = data?.schedule_status || "yet_to_schedule";
@@ -940,7 +953,6 @@ function RoundCell({ appId, round, data, onSave, readOnly }: {
     const [time, setTime] = useState(savedTime);
     const [comment, setComment] = useState("");
     const [commentErr, setCommentErr] = useState<string | null>(null);
-    const [pendingClear, setPendingClear] = useState(false); // outcome cleared, awaiting save
     const [saving, setSaving] = useState(false);
     const [pos, setPos] = useState({ top: 0, left: 0 });
     const anchorRef = useRef<HTMLDivElement>(null);
@@ -950,7 +962,6 @@ function RoundCell({ appId, round, data, onSave, readOnly }: {
         setStatus(data?.schedule_status || "yet_to_schedule");
         setDate(data?.scheduled_date || "");
         setTime(data?.scheduled_time || "");
-        setPendingClear(false);
     }, [data]);
 
     // Outside-click closes popover
@@ -978,7 +989,7 @@ function RoundCell({ appId, round, data, onSave, readOnly }: {
         setOpen(o => !o);
     };
 
-    // Save with the given outcome (called immediately when Passed/Rejected clicked)
+    // Save with the given outcome (called immediately when Passed/Rejected/Clear clicked)
     const saveWithOutcome = async (newOutcome: string) => {
         const c = comment.trim();
         if (newOutcome === "rejected" && !c) {
@@ -997,9 +1008,13 @@ function RoundCell({ appId, round, data, onSave, readOnly }: {
         setSaving(false);
         setComment("");
         setOpen(false);
+        // After L3/HR passes, prompt for selection details
+        if (newOutcome === "passed" && (round === "L3" || round === "HR")) {
+            onPassedFinal?.();
+        }
     };
 
-    // Save schedule fields (+ any pending clear)
+    // Save schedule fields only
     const saveSchedule = async () => {
         setSaving(true);
         const isClearRound = status === "clear";
@@ -1007,10 +1022,9 @@ function RoundCell({ appId, round, data, onSave, readOnly }: {
             schedule_status: isClearRound ? "yet_to_schedule" : status,
             scheduled_date: isClearRound ? null : (date || null),
             scheduled_time: isClearRound ? null : (time || null),
-            outcome: isClearRound || pendingClear ? null : (savedOutcome || null),
+            outcome: isClearRound ? null : (savedOutcome || null),
         });
         setSaving(false);
-        setPendingClear(false);
         if (isClearRound) setStatus("yet_to_schedule");
         setOpen(false);
     };
@@ -1021,12 +1035,10 @@ function RoundCell({ appId, round, data, onSave, readOnly }: {
         setTime(savedTime);
         setComment("");
         setCommentErr(null);
-        setPendingClear(false);
         setOpen(false);
     };
 
-    const scheduleDirty = status !== savedStatus || date !== savedDate || time !== savedTime;
-    const needsSave = scheduleDirty || pendingClear;
+    const needsSave = status !== savedStatus || date !== savedDate || time !== savedTime;
 
     // ── Badge shown in the cell ───────────────────────────────────────────
     const base: CSSProperties = { fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 4, cursor: "pointer", display: "inline-block", whiteSpace: "nowrap" };
@@ -1080,19 +1092,15 @@ function RoundCell({ appId, round, data, onSave, readOnly }: {
 
             {/* Outcome */}
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Outcome</div>
-            {savedOutcome && !pendingClear && (
-                <button onClick={() => setPendingClear(true)} disabled={saving}
+            {savedOutcome && (
+                <button onClick={() => !saving && saveWithOutcome("")} disabled={saving}
                     style={{
-                        width: "100%", marginBottom: 8, fontSize: 12, padding: "5px 0", borderRadius: 4, cursor: "pointer", fontWeight: 500,
+                        width: "100%", marginBottom: 8, fontSize: 12, padding: "5px 0", borderRadius: 4,
+                        cursor: saving ? "not-allowed" : "pointer", fontWeight: 600,
                         background: "#fff5f5", color: "#dc2626", border: "1px solid #fca5a5"
                     }}>
-                    × Clear current outcome ({savedOutcome})
+                    × Clear outcome ({savedOutcome})
                 </button>
-            )}
-            {pendingClear && (
-                <div style={{ marginBottom: 8, fontSize: 12, color: "#d97706", fontWeight: 600, padding: "5px 8px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 4 }}>
-                    ⚠ Outcome will be cleared on Save
-                </div>
             )}
 
             {/* Comment — optional on pass, required on reject. Routed to the unified comment store. */}
@@ -1108,11 +1116,11 @@ function RoundCell({ appId, round, data, onSave, readOnly }: {
             {/* Outcome buttons — click saves immediately */}
             <div style={{ display: "flex", gap: 6, marginBottom: needsSave ? 10 : 0 }}>
                 <button onClick={() => !saving && saveWithOutcome("passed")} disabled={saving}
-                    style={{ ...btnBase, background: savedOutcome === "passed" && !pendingClear ? "#dcfce7" : "transparent", color: "#16a34a", borderColor: savedOutcome === "passed" && !pendingClear ? "#16a34a" : "#86efac" }}>
+                    style={{ ...btnBase, background: savedOutcome === "passed" ? "#dcfce7" : "transparent", color: "#16a34a", borderColor: savedOutcome === "passed" ? "#16a34a" : "#86efac" }}>
                     {saving ? "…" : "✓ Passed"}
                 </button>
                 <button onClick={() => !saving && saveWithOutcome("rejected")} disabled={saving}
-                    style={{ ...btnBase, background: savedOutcome === "rejected" && !pendingClear ? "#fee2e2" : "transparent", color: "#dc2626", borderColor: savedOutcome === "rejected" && !pendingClear ? "#dc2626" : "#fca5a5" }}>
+                    style={{ ...btnBase, background: savedOutcome === "rejected" ? "#fee2e2" : "transparent", color: "#dc2626", borderColor: savedOutcome === "rejected" ? "#dc2626" : "#fca5a5" }}>
                     {saving ? "…" : "✗ Rejected"}
                 </button>
             </div>
@@ -1121,7 +1129,7 @@ function RoundCell({ appId, round, data, onSave, readOnly }: {
             {/* Save / Cancel for schedule changes or clearing */}
             {needsSave && (
                 <>
-                    {scheduleDirty && (
+                    {needsSave && (
                         <div style={{ fontSize: 11, color: "#d97706", marginBottom: 8, display: "flex", alignItems: "center", gap: 5 }}>
                             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#d97706", flexShrink: 0 }} />
                             Schedule changes not yet saved
@@ -1151,12 +1159,96 @@ function RoundCell({ appId, round, data, onSave, readOnly }: {
     );
 }
 
+// ── Selection Details Drawer ──────────────────────────────────────────────
+// Opened after L3/HR passes to collect offer + joining details.
+function SelectionDetailsDrawer({ appId, candidateName, onClose, onSaved }: {
+    appId: string; candidateName?: string; onClose: () => void; onSaved: (patch: any) => void;
+}) {
+    const [offeredCtc, setOfferedCtc] = useState("");
+    const [doj, setDoj] = useState("");
+    const [status, setStatus] = useState("SELECTED");
+    const [saving, setSaving] = useState(false);
+    const [err, setErr] = useState<string | null>(null);
+
+    useEffect(() => {
+        const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+        window.addEventListener("keydown", h);
+        return () => window.removeEventListener("keydown", h);
+    }, [onClose]);
+
+    const handleSave = async () => {
+        setSaving(true);
+        setErr(null);
+        try {
+            await api.patch(`/applications/${appId}/selection-details`, {
+                offered_ctc: offeredCtc ? parseFloat(offeredCtc) : undefined,
+                date_of_joining: doj || undefined,
+                status,
+            });
+            onSaved({ offered_ctc: offeredCtc ? parseFloat(offeredCtc) : null, date_of_joining: doj || null, status });
+            onClose();
+        } catch (e: any) {
+            setErr(e?.detail || "Failed to save");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const labelStyle: CSSProperties = { fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" as const, letterSpacing: "0.6px", display: "block", marginBottom: 4 };
+    const inputStyle: CSSProperties = { width: "100%", boxSizing: "border-box" as const, fontSize: 13, padding: "7px 10px", border: "1px solid var(--border-subtle)", borderRadius: 6, background: "var(--bg-input)", color: "var(--text-primary)" };
+
+    return (
+        <>
+            <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 1099, background: "rgba(0,0,0,0.18)" }} />
+            <aside style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: "min(420px, 95vw)", background: "var(--bg-primary)", borderLeft: "1px solid var(--border-subtle)", boxShadow: "-4px 0 20px rgba(0,0,0,0.12)", zIndex: 1100, display: "flex", flexDirection: "column" }}>
+                <header style={{ padding: "1rem 1.2rem", borderBottom: "1px solid var(--border-subtle)", display: "flex", alignItems: "flex-start", gap: "0.75rem" }}>
+                    <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text-primary)" }}>Selection Details</div>
+                        {candidateName && <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 3 }}>{candidateName}</div>}
+                    </div>
+                    <button onClick={onClose} className="btn btn-ghost btn-sm" style={{ padding: "4px 9px" }}>×</button>
+                </header>
+                <div style={{ flex: 1, overflowY: "auto", padding: "1.25rem 1.2rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+                    <div style={{ padding: "0.75rem 1rem", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, fontSize: 13, color: "#1d4ed8", lineHeight: 1.5 }}>
+                        Candidate cleared the final interview round. Fill in the offer details below.
+                    </div>
+                    <div>
+                        <label style={labelStyle}>Offered CTC (LPA)</label>
+                        <input type="number" min={0} step={0.1} value={offeredCtc} onChange={e => setOfferedCtc(e.target.value)}
+                            placeholder="e.g. 12.5" style={inputStyle} />
+                    </div>
+                    <div>
+                        <label style={labelStyle}>Date of Joining</label>
+                        <input type="date" value={doj} onChange={e => setDoj(e.target.value)} style={inputStyle} />
+                    </div>
+                    <div>
+                        <label style={labelStyle}>Status</label>
+                        <select value={status} onChange={e => setStatus(e.target.value)} style={inputStyle}>
+                            <option value="SELECTED">Selected</option>
+                            <option value="HOLD">Hold</option>
+                            <option value="JOINED">Joined</option>
+                        </select>
+                    </div>
+                    {err && <div style={{ fontSize: 12, color: "#dc2626" }}>{err}</div>}
+                </div>
+                <footer style={{ padding: "1rem 1.2rem", borderTop: "1px solid var(--border-subtle)", display: "flex", gap: 8 }}>
+                    <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleSave} disabled={saving}>
+                        {saving ? "Saving…" : "Save Details"}
+                    </button>
+                    <button className="btn btn-ghost" onClick={onClose} disabled={saving}>Skip for now</button>
+                </footer>
+            </aside>
+        </>
+    );
+}
+
 function InterviewsTab() {
     const { isAdmin } = useAuth();
     const { applied: { client, search }, setCounts } = useContext(FilterCtx);
     const [rows, setRows] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [selectionDrawer, setSelectionDrawer] = useState<{ appId: string; candidateName?: string } | null>(null);
 
     useEffect(() => {
         analyticsApi.getInterviews()
@@ -1227,55 +1319,86 @@ function InterviewsTab() {
         return <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: s[1], color: s[2], border: `1px solid ${s[2]}30` }}>{s[0]}</span>;
     };
 
-    const COLS = 8;
+    const COLS = 9; // added Warning column
     return (
-        <div className="data-table-wrap" style={{ overflowX: "auto" }}>
-            <table className="data-table" style={{ tableLayout: "fixed", width: "100%", minWidth: 800 }}>
-                <colgroup>
-                    {/* Client  Role  Candidate  Recruiter  L1  L2  L3/HR  Outcome */}
-                    <col style={{ width: "10%" }} />
-                    <col style={{ width: "13%" }} />
-                    <col style={{ width: "15%" }} />
-                    <col style={{ width: "10%" }} />
-                    <col style={{ width: "17%" }} />
-                    <col style={{ width: "17%" }} />
-                    <col style={{ width: "17%" }} />
-                    <col style={{ width: "11%" }} />
-                </colgroup>
-                <thead>
-                    <tr>
-                        <th>Client</th><th>Role</th><th>Candidate</th><th>Recruiter</th>
-                        <th>L1</th><th>L2</th><th>L3 / HR</th>
-                        <th>Outcome</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {loading ? <SkeletonRows cols={COLS} /> : displayed.length === 0 ? (
-                        <tr><td colSpan={COLS} className="table-empty">No interviews found.</td></tr>
-                    ) : displayed.map((r: any) => {
-                        const sched = r.interview_schedule || {};
-                        return (
-                            <tr key={r.application_id}>
-                                <td><Trunc text={r.company_name} style={{ fontWeight: 500, fontSize: 13 }} /></td>
-                                <td><Trunc text={r.requirement_name} style={{ fontSize: 12 }} /></td>
-                                <td><Trunc text={r.candidate_name} style={{ fontWeight: 600, fontSize: 13 }} /></td>
-                                <td><Trunc text={r.recruiter_name} style={{ fontSize: 12 }} /></td>
-                                <td>
-                                    <RoundCell appId={r.application_id} round="L1" data={sched.L1} onSave={handleRoundSave} readOnly={!isAdmin} />
-                                </td>
-                                <td>
-                                    <RoundCell appId={r.application_id} round="L2" data={sched.L2} onSave={handleRoundSave} readOnly={!isAdmin} />
-                                </td>
-                                <td>
-                                    <RoundCell appId={r.application_id} round="L3" data={sched.L3} onSave={handleRoundSave} readOnly={!isAdmin} />
-                                </td>
-                                <td>{outcomeBadge(r.current_status)}</td>
-                            </tr>
-                        );
-                    })}
-                </tbody>
-            </table>
-        </div>
+        <>
+            {selectionDrawer && (
+                <SelectionDetailsDrawer
+                    appId={selectionDrawer.appId}
+                    candidateName={selectionDrawer.candidateName}
+                    onClose={() => setSelectionDrawer(null)}
+                    onSaved={(patch) => {
+                        setRows(prev => prev.map(r =>
+                            r.application_id === selectionDrawer.appId
+                                ? { ...r, offered_ctc: patch.offered_ctc, date_of_joining: patch.date_of_joining, current_status: patch.status }
+                                : r
+                        ));
+                        setSelectionDrawer(null);
+                    }}
+                />
+            )}
+            <div className="data-table-wrap" style={{ overflowX: "auto" }}>
+                <table className="data-table" style={{ tableLayout: "fixed", width: "100%", minWidth: 860 }}>
+                    <colgroup>
+                        <col style={{ width: "10%" }} />
+                        <col style={{ width: "13%" }} />
+                        <col style={{ width: "14%" }} />
+                        <col style={{ width: "9%" }} />
+                        <col style={{ width: "16%" }} />
+                        <col style={{ width: "16%" }} />
+                        <col style={{ width: "16%" }} />
+                        <col style={{ width: "10%" }} />
+                        <col style={{ width: "4%" }} />
+                    </colgroup>
+                    <thead>
+                        <tr>
+                            <th>Client</th><th>Role</th><th>Candidate</th><th>Recruiter</th>
+                            <th>L1</th><th>L2</th><th>L3 / HR</th>
+                            <th>Outcome</th><th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {loading ? <SkeletonRows cols={COLS} /> : displayed.length === 0 ? (
+                            <tr><td colSpan={COLS} className="table-empty">No interviews found.</td></tr>
+                        ) : displayed.map((r: any) => {
+                            const sched = r.interview_schedule || {};
+                            // Show warning when L3/HR passed but selection details not yet filled
+                            const needsSelectionDetails = r.current_status === "HR_ROUND" && !r.offered_ctc;
+                            return (
+                                <tr key={r.application_id}>
+                                    <td><Trunc text={r.company_name} style={{ fontWeight: 500, fontSize: 13 }} /></td>
+                                    <td><Trunc text={r.requirement_name} style={{ fontSize: 12 }} /></td>
+                                    <td><Trunc text={r.candidate_name} style={{ fontWeight: 600, fontSize: 13 }} /></td>
+                                    <td><Trunc text={r.recruiter_name} style={{ fontSize: 12 }} /></td>
+                                    <td>
+                                        <RoundCell appId={r.application_id} round="L1" data={sched.L1} onSave={handleRoundSave} readOnly={!isAdmin} />
+                                    </td>
+                                    <td>
+                                        <RoundCell appId={r.application_id} round="L2" data={sched.L2} onSave={handleRoundSave} readOnly={!isAdmin} />
+                                    </td>
+                                    <td>
+                                        <RoundCell appId={r.application_id} round="L3" data={sched.L3} onSave={handleRoundSave} readOnly={!isAdmin}
+                                            onPassedFinal={() => setSelectionDrawer({ appId: r.application_id, candidateName: r.candidate_name })} />
+                                    </td>
+                                    <td>{outcomeBadge(r.current_status)}</td>
+                                    <td style={{ textAlign: "center" }}>
+                                        {needsSelectionDetails && isAdmin && (
+                                            <button
+                                                onClick={() => setSelectionDrawer({ appId: r.application_id, candidateName: r.candidate_name })}
+                                                title="Selection details not filled — click to add offer details"
+                                                style={{ background: "none", border: "none", cursor: "pointer", padding: 0, lineHeight: 1 }}
+                                            >
+                                                <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 20, height: 20, borderRadius: "50%", background: "#fef3c7", border: "2px solid #d97706", color: "#d97706", fontSize: 12, fontWeight: 800 }}>!</span>
+                                            </button>
+                                        )}
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
+        </>
     );
 }
 
@@ -1549,19 +1672,48 @@ const FILTER_TABS = ["tracker", "submissions", "interviews", "selections"];
 export default function Analytics() {
     useDocumentTitle("Analytics");
     const { isAdmin } = useAuth();
-    const [activeTab, setActiveTab] = useState("overview");
-    const [searchParams, setSearchParams] = useSearchParams();
+    const { tab: tabParam } = useParams<{ tab: string }>();
+    const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+
+    const VALID_TABS = ["overview", "tracker", "submissions", "interviews", "selections", "recruiters", "insights"];
+    // Local state gives an instant visual switch when a tab is clicked.
+    // The useEffect below keeps it in sync with the URL so back/forward and
+    // hard-refresh both land on the correct tab.
+    const [activeTab, setActiveTab] = useState<string>(
+        () => VALID_TABS.includes(tabParam || "") ? tabParam! : "overview"
+    );
+
+    useEffect(() => {
+        const t = VALID_TABS.includes(tabParam || "") ? tabParam! : "overview";
+        if (t !== activeTab) setActiveTab(t);
+    }, [tabParam]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const emptyFilters: AppliedFilters = { client: "", search: "", status: "", recruiterId: "" };
 
-    // Initialize draft from URL params
-    const initialDraft: AppliedFilters = {
+    // Filters live in URL query params so they survive refresh and share via URL.
+    // useMemo prevents a new object reference on every render (which would cause
+    // child useEffects that depend on `applied` to fire even when values haven't changed).
+    const applied = useMemo((): AppliedFilters => ({
         client: searchParams.get("client") || "",
         search: searchParams.get("search") || "",
         status: searchParams.get("status") || "",
-        recruiterId: searchParams.get("recruiterId") || ""
-    };
-    const [draft, setDraft] = useState<AppliedFilters>(initialDraft);
+        recruiterId: searchParams.get("recruiterId") || "",
+    }), [searchParams.get("client"), searchParams.get("search"), searchParams.get("status"), searchParams.get("recruiterId")]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Draft = local state of filter bar before Apply is clicked.
+    const [draft, setDraft] = useState<AppliedFilters>(applied);
+
+    // Sync draft when URL params change (back/forward navigation).
+    useEffect(() => {
+        setDraft({
+            client: searchParams.get("client") || "",
+            search: searchParams.get("search") || "",
+            status: searchParams.get("status") || "",
+            recruiterId: searchParams.get("recruiterId") || "",
+        });
+    }, [searchParams.toString()]); // eslint-disable-line react-hooks/exhaustive-deps
+
     const [clientOptions, setClientOptions] = useState<string[]>([]);
     const [recruiterOptions, setRecruiterOptions] = useState<{ id: string; name: string }[]>([]);
     const [counts, setCounts] = useState<React.ReactNode>(null);
@@ -1575,19 +1727,32 @@ export default function Analytics() {
             .catch(() => { });
     }, []);
 
-    const handleApply = () => {
-        const p = new URLSearchParams(searchParams);
-        if (draft.client) p.set("client", draft.client); else p.delete("client");
-        if (draft.search) p.set("search", draft.search); else p.delete("search");
-        if (draft.status) p.set("status", draft.status); else p.delete("status");
-        if (draft.recruiterId) p.set("recruiterId", draft.recruiterId); else p.delete("recruiterId");
-        setSearchParams(p);
+    const buildQs = (filters: AppliedFilters) => {
+        const p = new URLSearchParams();
+        if (filters.client) p.set("client", filters.client);
+        if (filters.search) p.set("search", filters.search);
+        if (filters.status) p.set("status", filters.status);
+        if (filters.recruiterId) p.set("recruiterId", filters.recruiterId);
+        return p.toString();
     };
+
+    const handleTabChange = (key: string) => {
+        setActiveTab(key); // instant visual switch — don't wait for router re-render
+        const qs = buildQs(applied);
+        navigate(`/analytics/${key}${qs ? `?${qs}` : ""}`, { replace: false });
+    };
+
+    const handleApply = () => {
+        const qs = buildQs(draft);
+        navigate(`/analytics/${activeTab}${qs ? `?${qs}` : ""}`, { replace: true });
+    };
+
     const handleClear = () => {
         setDraft(emptyFilters);
-        setSearchParams(new URLSearchParams());
+        navigate(`/analytics/${activeTab}`, { replace: true });
     };
-    const hasFilters = Object.values(draft).some(v => v !== "");
+
+    const hasFilters = Object.values(applied).some(v => v !== "");
 
     const tabs = [
         { key: "overview", label: "Overview" },
@@ -1602,7 +1767,7 @@ export default function Analytics() {
     ];
 
     return (
-        <FilterCtx.Provider value={{ applied: draft, recruiterOptions, setRecruiterOptions, setCounts }}>
+        <FilterCtx.Provider value={{ applied, recruiterOptions, setRecruiterOptions, setCounts }}>
             <style>{`
                 @keyframes ana-pulse { 0%,100%{opacity:.45} 50%{opacity:.9} }
                 .ana-skel { background: var(--bg-secondary); animation: ana-pulse 1.5s ease-in-out infinite; }
@@ -1615,7 +1780,7 @@ export default function Analytics() {
                 </div>
             </div>
 
-            <PillNav tabs={tabs} active={activeTab} onSelect={setActiveTab} />
+            <PillNav tabs={tabs} active={activeTab} onSelect={handleTabChange} />
 
             {FILTER_TABS.includes(activeTab) && (
                 <div className="filter-bar" style={{ marginBottom: "1.25rem" }}>

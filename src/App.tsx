@@ -74,7 +74,8 @@ function App() {
           <Route path="/my-submissions" element={<MySubmissions />} />
 
           {/* Analytics */}
-          <Route path="/analytics" element={<Analytics />} />
+          <Route path="/analytics" element={<Navigate to="/analytics/overview" replace />} />
+          <Route path="/analytics/:tab" element={<Analytics />} />
 
           {/* Team Management (Super Admin only) */}
           <Route path="/team" element={
