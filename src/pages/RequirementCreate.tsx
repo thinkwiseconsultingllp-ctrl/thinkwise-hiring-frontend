@@ -11,12 +11,29 @@ function ClientCombobox({ value, onChange }: { value: string; onChange: (v: stri
     const ref = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        api.get("/requirements")
-            .then((reqs: any[]) => {
-                const names = [...new Set((reqs || []).map((r: any) => r.company_name).filter(Boolean))].sort() as string[];
-                setClients(names);
+        api.get("/clients/my-companies")
+            .then(({ companies, all_access }: { companies: string[]; all_access: boolean }) => {
+                if (all_access) {
+                    // Super admin: merge assigned list with all existing requirement companies
+                    api.get("/requirements")
+                        .then((reqs: any[]) => {
+                            const reqNames = (reqs || []).map((r: any) => r.company_name).filter(Boolean) as string[];
+                            setClients([...new Set([...companies, ...reqNames])].sort());
+                        })
+                        .catch(() => setClients([...companies].sort()));
+                } else {
+                    setClients([...companies].sort());
+                }
             })
-            .catch(() => { });
+            .catch(() => {
+                // Fallback: derive from existing requirements if endpoint unavailable
+                api.get("/requirements")
+                    .then((reqs: any[]) => {
+                        const names = [...new Set((reqs || []).map((r: any) => r.company_name).filter(Boolean))].sort() as string[];
+                        setClients(names);
+                    })
+                    .catch(() => { });
+            });
     }, []);
 
     useEffect(() => {

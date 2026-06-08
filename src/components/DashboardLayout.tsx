@@ -195,10 +195,27 @@ function DashboardLayoutInner() {
 
                     {isAdmin && isSuperAdmin && (
                         <div className="nav-section">
+                            {!collapsed && <span className="nav-label">Overview</span>}
+                            <NavLink to="/dashboard" className="nav-item" onClick={closeMobile}>
+                                <span className="nav-icon"><Icon name="dashboard" size={16} /></span>
+                                {!collapsed && <span>Dashboard</span>}
+                            </NavLink>
+                            <NavLink to="/analytics" className="nav-item" onClick={closeMobile}>
+                                <span className="nav-icon"><Icon name="chart" size={16} /></span>
+                                {!collapsed && <span>Analytics</span>}
+                            </NavLink>
+                        </div>
+                    )}
+                    {isAdmin && isSuperAdmin && (
+                        <div className="nav-section">
                             {!collapsed && <span className="nav-label">Admin</span>}
                             <NavLink to="/team" className="nav-item" onClick={closeMobile}>
                                 <span className="nav-icon"><Icon name="team" size={16} /></span>
                                 {!collapsed && <span>Team</span>}
+                            </NavLink>
+                            <NavLink to="/clients" className="nav-item" onClick={closeMobile}>
+                                <span className="nav-icon"><Icon name="briefcase" size={16} /></span>
+                                {!collapsed && <span>Clients</span>}
                             </NavLink>
                         </div>
                     )}
@@ -268,7 +285,7 @@ function DashboardLayoutInner() {
                                                     : (n.requirement_id ? `/requirements/${n.requirement_id}` : "/dashboard");
                                                 const accentColor = n.status === "rejected" || n.status === "REJECTED" ? "var(--accent)"
                                                     : n.status === "pending" ? "#ca8a04"
-                                                    : "var(--success, #16a34a)";
+                                                        : "var(--success, #16a34a)";
                                                 return (
                                                     <div
                                                         key={n.id}

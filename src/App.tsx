@@ -26,8 +26,10 @@ import MyRequirements from "./pages/MyRequirements";
 import MySubmissions from "./pages/MySubmissions";
 import Analytics from "./pages/Analytics";
 import TeamManagement from "./pages/TeamManagement";
+import Clients from "./pages/Clients";
 import EmailResumes from "./components/EmailResume";
 import LinkedInSearchPage from "./pages/LinkedInSearchPage";
+import TestTools from "./pages/TestTools";
 
 function App() {
   return (
@@ -49,14 +51,12 @@ function App() {
           }
         >
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/dashboard/:clientSlug" element={<Dashboard />} />
+          <Route path="/dashboard/:clientSlug/:reqSlug" element={<Dashboard />} />
 
           {/* Requirements */}
           <Route path="/requirements" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/requirements/new" element={
-            <ProtectedRoute adminOnly>
-              <RequirementCreate />
-            </ProtectedRoute>
-          } />
+          <Route path="/requirements/new" element={<RequirementCreate />} />
           <Route path="/requirements/:id" element={<RequirementDetail />} />
           <Route path="/requirements/:id/profiles/:candidateId" element={<ProfileFullView />} />
           <Route path="/assignment-requests" element={<AssignmentRequests />} />
@@ -83,10 +83,20 @@ function App() {
               <TeamManagement />
             </ProtectedRoute>
           } />
+          <Route path="/clients" element={
+            <ProtectedRoute adminOnly>
+              <Clients />
+            </ProtectedRoute>
+          } />
 
           {/* New Email Resumes Page */}
           <Route path="/email-resumes" element={<EmailResumes />} />
           <Route path="/linkedin-search" element={<LinkedInSearchPage />} />
+          <Route path="/test-tools" element={
+            <ProtectedRoute adminOnly>
+              <TestTools />
+            </ProtectedRoute>
+          } />
 
         </Route>
 

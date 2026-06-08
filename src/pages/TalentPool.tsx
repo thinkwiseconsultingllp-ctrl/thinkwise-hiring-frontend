@@ -28,6 +28,7 @@ type Candidate = {
   Experience?: Array<{ Position?: string; Company?: string; Years?: string }> | null;
   experience_label?: string | null;
   resume_filename?: string | null;
+  resume_updated_at?: string | null;
   created_at: string;
   structured_with_ai?: boolean | null;
   uploaded_by_name?: string;
@@ -609,7 +610,30 @@ export default function TalentPool() {
                       Owned by <strong>{candidate.uploaded_by_name}</strong>
                     </div>
                   )}
-                  {candidate.resume_filename && <div className="talent-file" title={candidate.resume_filename}>{candidate.resume_filename}</div>}
+                  {candidate.resume_filename && (
+                    <div>
+                      <div className="talent-file" title={candidate.resume_filename}>{candidate.resume_filename}</div>
+                      {(() => {
+                        const dateStr = candidate.resume_updated_at || candidate.created_at;
+                        if (!dateStr) return null;
+                        const uploaded = new Date(dateStr);
+                        const diffDays = Math.floor((Date.now() - uploaded.getTime()) / 86400000);
+                        const diffMonths = diffDays / 30;
+                        const isOld = diffMonths >= 2;
+                        const label = diffDays < 1 ? "Today"
+                          : diffDays < 30 ? `${diffDays}d ago`
+                            : `${Math.floor(diffMonths)}mo ago`;
+                        return (
+                          <div style={{ fontSize: 10, marginTop: 2, color: isOld ? "#b45309" : "var(--text-muted)", display: "flex", alignItems: "center", gap: 3 }}
+                            title={uploaded.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}>
+                            {isOld && <span>⚠</span>}
+                            <span>{label}</span>
+                            {isOld && <span style={{ opacity: 0.8 }}>· may be outdated</span>}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
                 </div>
               </a>
             );

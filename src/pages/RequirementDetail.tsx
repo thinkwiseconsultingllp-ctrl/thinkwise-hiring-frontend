@@ -255,8 +255,9 @@ function SubmissionDetailModal({ app, prof, isAdmin, onClose }: { app: Applicati
     );
 }
 
-export default function RequirementDetail() {
-    const { id } = useParams<{ id: string }>();
+export default function RequirementDetail({ reqId: reqIdProp }: { reqId?: string } = {}) {
+    const params = useParams<{ id: string }>();
+    const id = reqIdProp || params.id;
     const { user, isAdmin, isRecruiter } = useAuth();
     const navigate = useNavigate();
     const { openJd, activeReq: jdActiveReq } = useJdViewer();

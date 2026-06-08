@@ -22,6 +22,7 @@ interface Invite {
     used: boolean;
 }
 
+
 type Tab = "active" | "inactive" | "invites";
 
 export default function TeamManagement() {
@@ -218,7 +219,9 @@ export default function TeamManagement() {
                         : tab === "inactive" ? `Inactive (${inactiveUsers.length})`
                             : `Approved Emails (${invites.filter(i => !i.used).length})`;
                     return (
-                        <button key={tab} onClick={() => setActiveTab(tab)} style={{
+                        <button key={tab} onClick={() => {
+                            setActiveTab(tab);
+                        }} style={{
                             background: 'none', border: 'none',
                             borderBottom: activeTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
                             padding: '0.75rem 0',

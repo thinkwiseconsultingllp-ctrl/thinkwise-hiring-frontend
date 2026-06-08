@@ -1,12 +1,13 @@
 import { useState, useMemo } from "react";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../services/api";
 import StatusBadge from "../components/StatusBadge";
 import ModernDropdown from "../components/ModernDropdown";
 import Icon from "../components/Icon";
 import { useQuery } from "@tanstack/react-query";
+import RequirementDetail from "./RequirementDetail";
 import "../styles/pages.css";
 
 interface Notification {
@@ -278,6 +279,10 @@ function JDDetailModal({ req, onClose }: { req: Requirement; onClose: () => void
     );
 }
 
+function toSlug(s: string) {
+    return s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
 function RequirementCard({
     req,
     onAssign,
@@ -290,7 +295,7 @@ function RequirementCard({
     req: Requirement;
     onAssign: (id: string) => void;
     onViewDetails: (req: Requirement) => void;
-    onNavigate: (id: string) => void;
+    onNavigate: (req: Requirement) => void;
     assigning: string | null;
     userId: string;
     isRequested?: boolean;
@@ -309,7 +314,7 @@ function RequirementCard({
             transition: "box-shadow 0.18s, transform 0.18s",
             cursor: "pointer",
         }}
-            onClick={() => onNavigate(req.id)}
+            onClick={() => onNavigate(req)}
             onMouseEnter={e => {
                 (e.currentTarget as HTMLDivElement).style.boxShadow = "0 6px 24px rgba(0,0,0,0.10)";
                 (e.currentTarget as HTMLDivElement).style.transform = "translateY(-2px)";
@@ -465,14 +470,15 @@ function RecruiterAssignmentsTable({ requirements }: { requirements: Requirement
 
 export default function Dashboard() {
     useDocumentTitle("Dashboard");
-    const { user, isAdmin, isSuperAdmin } = useAuth();
+    const { user, isAdmin } = useAuth();
     const navigate = useNavigate();
+    const { clientSlug, reqSlug } = useParams<{ clientSlug?: string; reqSlug?: string }>();
+    const location = useLocation();
+    const reqIdFromState = (location.state as any)?.reqId as string | undefined;
     const [assigning, setAssigning] = useState<string | null>(null);
     const [optimisticRequested, setOptimisticRequested] = useState<Set<string>>(new Set());
     const [detailReq, setDetailReq] = useState<Requirement | null>(null);
     const notice = "";
-
-    const [selectedClient, setSelectedClient] = useState<string | null>(null);
 
     const { data: requirements = [], isLoading: loading } = useQuery<Requirement[]>({
         queryKey: ["requirements"],
@@ -498,6 +504,14 @@ export default function Dashboard() {
         [pendingRequestIds, optimisticRequested],
     );
 
+    // Fetch official client list (companies user can manage)
+    const { data: myCompaniesData } = useQuery<{ companies: string[]; all_access: boolean }>({
+        queryKey: ["my-companies"],
+        queryFn: () => api.get("/clients/my-companies").then((r: any) => r || { companies: [], all_access: false }),
+        staleTime: 5 * 60 * 1000,
+        retry: false,
+    });
+
     const clientsMap = useMemo(() => {
         const map = new Map<string, Requirement[]>();
         for (const req of requirements) {
@@ -507,8 +521,38 @@ export default function Dashboard() {
         }
         return map;
     }, [requirements]);
-    const clientNames = Array.from(clientsMap.keys()).sort();
+
+    // Merge official client names with requirement-derived names.
+    // Deduplicate by slug so "CtrlS" and "ctrls" become one card.
+    // Requirements-derived names (canonical casing) win over API names.
+    const clientNames = useMemo(() => {
+        const fromReqs = Array.from(clientsMap.keys());
+        const fromApi = myCompaniesData?.companies || [];
+        const slugToName = new Map<string, string>();
+        // API names first (lower priority)
+        for (const n of fromApi) slugToName.set(toSlug(n), n);
+        // Requirements names overwrite (higher priority — canonical casing)
+        for (const n of fromReqs) slugToName.set(toSlug(n), n);
+        return [...slugToName.values()].sort();
+    }, [clientsMap, myCompaniesData]);
+
+    // Resolve URL slug → client name
+    const selectedClient = useMemo(() => {
+        if (!clientSlug) return null;
+        return clientNames.find(n => toSlug(n) === clientSlug) || null;
+    }, [clientSlug, clientNames]);
+
     const clientRequirements = selectedClient ? (clientsMap.get(selectedClient) || []) : [];
+
+    // True if the current user is an assigned client manager for the selected client.
+    // Use slug comparison so "ctrls" matches "CtrlS" (same slug "ctrls").
+    const isClientManager = Boolean(
+        myCompaniesData?.all_access ||
+        (myCompaniesData?.companies || []).some(c => toSlug(c) === (clientSlug || ""))
+    );
+
+    // Treat client managers like admins for their assigned client
+    const effectiveAdmin = isAdmin || isClientManager;
 
     // Admin filter state
     const [searchParam, setSearchParam] = useState("");
@@ -644,6 +688,7 @@ export default function Dashboard() {
                     {clientNames.map(c => {
                         const reqs = clientsMap.get(c) || [];
                         const openCount = reqs.filter(r => r.status === "OPEN").length;
+                        const isActive = openCount > 0;
                         return (
                             <div key={c}
                                 style={{
@@ -651,13 +696,24 @@ export default function Dashboard() {
                                     borderRadius: "12px", padding: "20px", cursor: "pointer",
                                     transition: "all 0.2s"
                                 }}
-                                onClick={() => setSelectedClient(c)}
+                                onClick={() => navigate(`/dashboard/${toSlug(c)}`)}
                                 onMouseEnter={e => e.currentTarget.style.borderColor = "var(--primary)"}
                                 onMouseLeave={e => e.currentTarget.style.borderColor = "var(--border-subtle)"}
                             >
-                                <h3 style={{ margin: "0 0 8px 0", fontSize: "18px" }}>{c}</h3>
+                                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+                                    <h3 style={{ margin: 0, fontSize: "18px" }}>{c}</h3>
+                                    <span style={{
+                                        fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20,
+                                        background: isActive ? "color-mix(in srgb, var(--success, #16a34a) 12%, transparent)" : "var(--bg-secondary)",
+                                        color: isActive ? "var(--success, #16a34a)" : "var(--text-muted)",
+                                        border: `1px solid ${isActive ? "color-mix(in srgb, var(--success, #16a34a) 30%, transparent)" : "var(--border-subtle)"}`,
+                                        flexShrink: 0,
+                                    }}>
+                                        {isActive ? "Active" : "Inactive"}
+                                    </span>
+                                </div>
                                 <div style={{ color: "var(--text-secondary)", fontSize: "13px" }}>
-                                    {openCount} Open Requirements
+                                    {openCount} Open Requirement{openCount !== 1 ? "s" : ""}
                                 </div>
                             </div>
                         )
@@ -669,9 +725,19 @@ export default function Dashboard() {
         );
     };
 
-    if (isSuperAdmin) {
-        navigate("/team", { replace: true });
-        return null;
+    // ── Requirement detail view (/dashboard/:clientSlug/:reqSlug) ─────────────
+    // Fast path: caller passed reqId in navigation state (from Analytics row click)
+    if (reqIdFromState) {
+        return <RequirementDetail reqId={reqIdFromState} />;
+    }
+    // Slug-resolution fallback (for direct URL access or Dashboard table row click)
+    if (reqSlug) {
+        if (loading) return <div className="page-loading">Loading…</div>;
+        const matchedReq = requirements.find(
+            r => toSlug(r.company_name || "") === clientSlug && toSlug(r.requirement_name || "") === reqSlug
+        );
+        if (matchedReq) return <RequirementDetail reqId={matchedReq.id} />;
+        // No match — fall through to client view (slug may be stale)
     }
 
     if (!selectedClient) {
@@ -679,7 +745,8 @@ export default function Dashboard() {
     }
 
     // Recruiter card view
-    if (!isAdmin) {
+    if (!effectiveAdmin) {
+
         const filtered = clientRequirements.filter(r => {
             const matchesStatus = cardStatus === "ALL" || r.status === cardStatus;
             const q = cardSearch.toLowerCase();
@@ -695,7 +762,7 @@ export default function Dashboard() {
                 <div>
                     <div className="page-header" style={{ alignItems: "flex-start" }}>
                         <div>
-                            <button className="btn btn-ghost btn-sm" style={{ marginBottom: "8px", padding: "4px 0", color: "var(--text-muted)" }} onClick={() => setSelectedClient(null)}>
+                            <button className="btn btn-ghost btn-sm" style={{ marginBottom: "8px", padding: "4px 0", color: "var(--text-muted)" }} onClick={() => navigate("/dashboard")}>
                                 ← Back to Clients
                             </button>
                             <h1 style={{ marginTop: 0 }}>{selectedClient} Requirements</h1>
@@ -758,7 +825,7 @@ export default function Dashboard() {
                                     req={req}
                                     onAssign={handleAssign}
                                     onViewDetails={setDetailReq}
-                                    onNavigate={(id) => navigate(`/requirements/${id}`)}
+                                    onNavigate={(req) => navigate(`/dashboard/${toSlug(req.company_name || "")}/${toSlug(req.requirement_name || "")}`)}
                                     assigning={assigning}
                                     userId={user?.id || ""}
                                     isRequested={requestedReqs.has(req.id)}
@@ -780,7 +847,7 @@ export default function Dashboard() {
         <div>
             <div className="page-header" style={{ alignItems: "flex-start" }}>
                 <div>
-                    <button className="btn btn-ghost btn-sm" style={{ marginBottom: "8px", padding: "4px 0", color: "var(--text-muted)" }} onClick={() => setSelectedClient(null)}>
+                    <button className="btn btn-ghost btn-sm" style={{ marginBottom: "8px", padding: "4px 0", color: "var(--text-muted)" }} onClick={() => navigate("/dashboard")}>
                         ← Back to Clients
                     </button>
                     <h1 style={{ marginTop: 0 }}>{selectedClient}</h1>
@@ -878,7 +945,7 @@ export default function Dashboard() {
                             </thead>
                             <tbody>
                                 {displayedReqs.map(req => (
-                                    <tr key={req.id} onClick={(e) => { if (e.ctrlKey || e.metaKey) { window.open(`/requirements/${req.id}`, '_blank'); } else { navigate(`/requirements/${req.id}`); } }} style={{ cursor: "pointer" }}>
+                                    <tr key={req.id} onClick={(e) => { if (e.ctrlKey || e.metaKey) { window.open(`/requirements/${req.id}`, '_blank'); } else { navigate(`/dashboard/${toSlug(req.company_name || "")}/${toSlug(req.requirement_name || "")}`); } }} style={{ cursor: "pointer" }}>
                                         <td className="font-mono text-accent">{req.req_id}</td>
                                         <td><strong>{req.requirement_name}</strong></td>
                                         <td>{req.requirement_type || "-"}</td>
@@ -888,7 +955,7 @@ export default function Dashboard() {
                                         <td><StatusBadge status={req.status} /></td>
                                         <td className="text-muted text-sm">{new Date(req.created_at).toLocaleDateString()}</td>
                                         <td onClick={e => e.stopPropagation()} style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                                            <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/requirements/${req.id}`)}>View</button>
+                                            <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/dashboard/${toSlug(req.company_name || "")}/${toSlug(req.requirement_name || "")}`)}>View</button>
                                             <a href={`/requirements/${req.id}`} target="_blank" rel="noreferrer" title="Open in new tab"
                                                 style={{ fontSize: 14, color: "var(--text-muted)", textDecoration: "none", padding: "2px 4px" }}>↗</a>
                                         </td>

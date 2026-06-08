@@ -1018,7 +1018,19 @@ export default function ProfileDrawer({ jdId, profile, action, initialTab, onUpd
                         <UpdateForm profile={profile} jdId={jdId} refreshProfile={refreshProfile} />
                     )}
                     {action === "submit" && (
-                        <ReviewPanel profile={profile} jdId={jdId} />
+                        profile.sourced_by?.source === "manual" ? (
+                            <div style={{ padding: "2.5rem 1.5rem", textAlign: "center" }}>
+                                <div style={{ fontSize: 36, marginBottom: "0.75rem" }}>🔒</div>
+                                <div style={{ fontWeight: 600, fontSize: 15, marginBottom: "0.5rem" }}>Cannot Submit</div>
+                                <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                                    This profile was manually uploaded and is owned by{" "}
+                                    <strong>{profile.uploaded_by_name || profile.recruiter_name || "—"}</strong>.
+                                    <br />Manually uploaded profiles are not submitted through the review flow.
+                                </div>
+                            </div>
+                        ) : (
+                            <ReviewPanel profile={profile} jdId={jdId} />
+                        )
                     )}
                 </div>
             </aside>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, createContext, useContext } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { createPortal } from "react-dom";
 import type { CSSProperties } from "react";
@@ -18,6 +19,10 @@ const FilterCtx = createContext<FilterCtxShape>({
     setCounts: () => { },
 });
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+
+function toSlug(s: string) {
+    return (s || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
 import { useAuth } from "../context/AuthContext";
 import { analyticsApi, api, API_BASE, getToken } from "../services/api";
 import StatusBadge from "../components/StatusBadge";
@@ -417,13 +422,11 @@ function TrackerTab() {
                                 <tr><td colSpan={11} className="table-empty">No requirements found.</td></tr>
                             ) : sorted.map(r => (
                                 <tr key={r.id} style={{ cursor: "pointer" }}
-                                    onClick={() => navigate(`/requirements/${r.id}`)}>
+                                    onClick={() => navigate(`/dashboard/${toSlug(r.company_name)}/${toSlug(r.requirement_name)}`, { state: { reqId: r.id } })}>
                                     <td>
-                                        <a href={`/requirements/${r.id}`}
-                                            onClick={e => e.preventDefault()}
-                                            style={{ fontSize: 11, fontFamily: "monospace", color: "var(--accent)", textDecoration: "none" }}>
+                                        <span style={{ fontSize: 11, fontFamily: "monospace", color: "var(--accent)" }}>
                                             {r.req_id}
-                                        </a>
+                                        </span>
                                     </td>
                                     <td style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.company_name || "—"}</td>
                                     <td style={{ overflow: "hidden" }}>
@@ -1242,8 +1245,7 @@ function SelectionDetailsDrawer({ appId, candidateName, onClose, onSaved }: {
     );
 }
 
-function InterviewsTab() {
-    const { isAdmin } = useAuth();
+function InterviewsTab({ isAdmin }: { isAdmin: boolean }) {
     const { applied: { client, search }, setCounts } = useContext(FilterCtx);
     const [rows, setRows] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -1674,6 +1676,17 @@ export default function Analytics() {
     const { isAdmin } = useAuth();
     const { tab: tabParam } = useParams<{ tab: string }>();
     const navigate = useNavigate();
+
+    // Client managers (any role) get editing access in the tabs, scoped to their companies.
+    // The backend enforces per-company authorization; this just unlocks the UI.
+    const { data: myCompaniesData } = useQuery<{ companies: string[]; all_access: boolean }>({
+        queryKey: ["my-companies"],
+        queryFn: () => api.get("/clients/my-companies").then((r: any) => r || { companies: [], all_access: false }),
+        staleTime: 5 * 60 * 1000,
+        retry: false,
+    });
+    const isEffectiveAdmin = isAdmin ||
+        Boolean(myCompaniesData?.all_access || (myCompaniesData?.companies?.length ?? 0) > 0);
     const [searchParams] = useSearchParams();
 
     const VALID_TABS = ["overview", "tracker", "submissions", "interviews", "selections", "recruiters", "insights"];
@@ -1819,8 +1832,8 @@ export default function Analytics() {
 
             {activeTab === "overview" && <OverviewTab />}
             {activeTab === "tracker" && <TrackerTab />}
-            {activeTab === "submissions" && <SubmissionsTab isAdmin={isAdmin} />}
-            {activeTab === "interviews" && <InterviewsTab />}
+            {activeTab === "submissions" && <SubmissionsTab isAdmin={isEffectiveAdmin} />}
+            {activeTab === "interviews" && <InterviewsTab isAdmin={isEffectiveAdmin} />}
             {activeTab === "selections" && <SelectionsTab />}
             {activeTab === "recruiters" && isAdmin && <RecruitersTab />}
             {activeTab === "insights" && isAdmin && <InsightsTab />}
