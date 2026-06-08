@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, createContext, useContext } from "react";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
+import { createPortal } from "react-dom";
 import type { CSSProperties } from "react";
 
 // ── Global filter context shared across all tabs ──────────────────────────
@@ -7,15 +9,17 @@ interface FilterCtxShape {
     applied: AppliedFilters;
     recruiterOptions: { id: string; name: string }[];
     setRecruiterOptions: (opts: { id: string; name: string }[]) => void;
+    setCounts: (nodes: React.ReactNode) => void;
 }
 const FilterCtx = createContext<FilterCtxShape>({
     applied: { client: "", search: "", status: "", recruiterId: "" },
     recruiterOptions: [],
     setRecruiterOptions: () => { },
+    setCounts: () => { },
 });
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { analyticsApi } from "../services/api";
+import { analyticsApi, api, API_BASE, getToken } from "../services/api";
 import StatusBadge from "../components/StatusBadge";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import "../styles/pages.css";
@@ -323,7 +327,7 @@ function AssignedPopover({ names }: { names: string[] }) {
 // ────────────────────────────────────────────────────────────────────────────
 
 function TrackerTab() {
-    const { applied: { client, search } } = useContext(FilterCtx);
+    const { applied: { client, search }, setCounts } = useContext(FilterCtx);
     const navigate = useNavigate();
     const [rows, setRows] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -346,6 +350,21 @@ function TrackerTab() {
             || r.req_id?.toLowerCase().includes(search.toLowerCase());
         return matchesClient && matchesSearch;
     });
+
+    useEffect(() => {
+        const totalClients = new Set(filtered.map(r => r.company_name).filter(Boolean)).size;
+        const openReqs = filtered.filter(r => r.status === "OPEN").length;
+        const closedReqs = filtered.filter(r => r.status === "CLOSED").length;
+
+        setCounts(
+            <>
+                {!client && <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>Clients: <strong style={{ color: "var(--text-primary)" }}>{totalClients}</strong></div>}
+                <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>Open Reqs: <strong style={{ color: "var(--text-primary)" }}>{openReqs}</strong></div>
+                {client && <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>Closed Reqs: <strong style={{ color: "var(--text-primary)" }}>{closedReqs}</strong></div>}
+            </>
+        );
+        return () => setCounts(null);
+    }, [filtered, client, setCounts]);
 
     const sorted = [...filtered].sort((a, b) => {
         const av = a[sortKey] ?? 0, bv = b[sortKey] ?? 0;
@@ -449,12 +468,118 @@ const CELL: CSSProperties = {
     maxWidth: 0,
 };
 
-function SubmissionDetailModal({ sub, isAdmin, onClose }: { sub: any; isAdmin: boolean; onClose: () => void }) {
+// Shortlisted cell — collapsed shows the current value (or a gray "Update" placeholder when
+// unset); pressing it (admin only) reveals the Yes / No choices.
+function ShortlistCell({ value, editable, onChange }: { value: boolean | null; editable: boolean; onChange: (val: boolean) => void }) {
+    const [open, setOpen] = useState(false);
+    const base: CSSProperties = { fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 4, display: "inline-block", whiteSpace: "nowrap", border: "1px solid" };
+
+    if (open && editable) {
+        return (
+            <span style={{ display: "inline-flex", gap: 4 }}>
+                <button onClick={() => { onChange(true); setOpen(false); }}
+                    style={{ ...base, cursor: "pointer", background: "#dcfce7", color: "#16a34a", borderColor: "#16a34a" }}>✓ Yes</button>
+                <button onClick={() => { onChange(false); setOpen(false); }}
+                    style={{ ...base, cursor: "pointer", background: "#fee2e2", color: "#dc2626", borderColor: "#dc2626" }}>✗ No</button>
+            </span>
+        );
+    }
+
+    const style: CSSProperties = value === true
+        ? { background: "#dcfce7", color: "#16a34a", borderColor: "#86efac" }
+        : value === false
+            ? { background: "#fee2e2", color: "#dc2626", borderColor: "#fca5a5" }
+            : { background: "var(--bg-secondary)", color: "var(--text-muted)", borderColor: "var(--border-subtle)" };
+    const label = value === true ? "✓ Yes" : value === false ? "✗ No" : "Update";
+
+    return (
+        <span
+            onClick={editable ? () => setOpen(true) : undefined}
+            title={editable ? "Set shortlisted" : "Set automatically from interview progress"}
+            style={{ ...base, ...style, cursor: editable ? "pointer" : "default" }}
+        >{label}</span>
+    );
+}
+
+// Focused side drawer for a submission — shows only the recruiter-submitted details
+// (already present in the list response, so no extra fetch), plus resume + comments.
+function SubmissionDrawer({ sub, isAdmin, onClose, onShortlist }: { sub: any; isAdmin: boolean; onClose: () => void; onShortlist?: (appId: string, val: boolean) => void }) {
+    const [comments, setComments] = useState<any[]>([]);
+    const [draft, setDraft] = useState("");
+    const [posting, setPosting] = useState(false);
+    const [resumeUrl, setResumeUrl] = useState<string | null>(null);
+    const [resumeErr, setResumeErr] = useState<string | null>(null);
+    const [resumeMime, setResumeMime] = useState("application/pdf");
+    const [shortlisted, setShortlisted] = useState<boolean | null>(sub.client_shortlisted ?? null);
+    const [savingSL, setSavingSL] = useState(false);
+
     useEffect(() => {
-        const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-        window.addEventListener("keydown", handler);
-        return () => window.removeEventListener("keydown", handler);
+        const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+        window.addEventListener("keydown", h);
+        return () => window.removeEventListener("keydown", h);
     }, [onClose]);
+
+    const loadComments = () => {
+        if (!sub.candidate_id) return;
+        api.get(`/candidates/${sub.candidate_id}/profile-comments`)
+            .then((d: any) => setComments(d.comments || []))
+            .catch(() => setComments([]));
+    };
+    useEffect(loadComments, [sub.candidate_id]);
+
+    // Resume — fetch the binary with auth (iframe can't send headers) and show it as a blob URL.
+    useEffect(() => {
+        if (!sub.candidate_id) return;
+        let url: string | null = null;
+        let cancelled = false;
+        (async () => {
+            setResumeErr(null);
+            try {
+                const token = await getToken();
+                const res = await fetch(`${API_BASE}/candidates/${sub.candidate_id}/resume`, {
+                    headers: token ? { Authorization: `Bearer ${token}` } : {},
+                });
+                if (!res.ok) throw new Error(res.status === 404 ? "No resume on file" : `Failed (HTTP ${res.status})`);
+                const blob = await res.blob();
+                if (cancelled) return;
+                setResumeMime(res.headers.get("Content-Type") || "application/pdf");
+                url = URL.createObjectURL(blob);
+                setResumeUrl(url);
+            } catch (e: any) {
+                if (!cancelled) setResumeErr(e?.message || "Failed to load resume");
+            }
+        })();
+        return () => { cancelled = true; if (url) URL.revokeObjectURL(url); };
+    }, [sub.candidate_id]);
+
+    // Shortlisted — admin/client-manager sets Yes / No. Optimistic, reverts on failure.
+    const setShortlist = async (val: boolean) => {
+        if (savingSL || shortlisted === val) return;
+        const prev = shortlisted;
+        setSavingSL(true);
+        setShortlisted(val);
+        try {
+            await api.patch(`/applications/${sub.application_id}/shortlist`, { shortlisted: val });
+            onShortlist?.(sub.application_id, val);
+        } catch {
+            setShortlisted(prev);
+        } finally {
+            setSavingSL(false);
+        }
+    };
+
+    const postComment = async () => {
+        const text = draft.trim();
+        if (!text || posting || !sub.requirement_id || !sub.candidate_id) return;
+        setPosting(true);
+        try {
+            await api.post(`/requirements/${sub.requirement_id}/profiles/${sub.candidate_id}/comments`, { comment: text });
+            setDraft("");
+            loadComments();
+        } catch { /* ignore */ } finally {
+            setPosting(false);
+        }
+    };
 
     const Field = ({ label, value }: { label: string; value?: any }) => (
         <div>
@@ -466,55 +591,82 @@ function SubmissionDetailModal({ sub, isAdmin, onClose }: { sub: any; isAdmin: b
     );
 
     return (
-        <div
-            style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.52)", display: "flex", alignItems: "center", justifyContent: "center", padding: "1.5rem" }}
-            onClick={onClose}
-        >
-            <div
-                style={{ background: "var(--bg-primary)", borderRadius: 14, boxShadow: "0 24px 80px rgba(0,0,0,0.35)", width: "100%", maxWidth: 560, maxHeight: "85vh", display: "flex", flexDirection: "column", overflow: "hidden", border: "1px solid var(--border-subtle)" }}
-                onClick={e => e.stopPropagation()}
-            >
-                {/* Header */}
-                <div style={{ padding: "1.1rem 1.4rem", borderBottom: "1px solid var(--border-subtle)", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "0.75rem" }}>
-                    <div>
-                        <div style={{ fontSize: 17, fontWeight: 800, color: "var(--text-primary)", lineHeight: 1.2 }}>{sub.candidate_name || "—"}</div>
-                        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 3, display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
+        <>
+            <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 999, background: "rgba(0,0,0,0.18)" }} />
+            <aside style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: "min(55vw, 720px)", background: "var(--bg-primary)", borderLeft: "1px solid var(--border-subtle)", boxShadow: "-4px 0 16px rgba(0,0,0,0.08)", zIndex: 1000, display: "flex", flexDirection: "column" }}>
+                <header style={{ padding: "0.95rem 1.2rem", borderBottom: "1px solid var(--border-subtle)", display: "flex", alignItems: "flex-start", gap: "0.75rem" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text-primary)", lineHeight: 1.2 }}>{sub.candidate_name || "—"}</div>
+                        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4, display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
                             <StatusBadge status={sub.status} />
                             <span style={{ color: "var(--text-muted)" }}>·</span>
                             <span>{fmtDate(sub.sent_at)}</span>
-                            {isAdmin && sub.recruiter_name && <>
-                                <span style={{ color: "var(--text-muted)" }}>· by</span>
-                                <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{sub.recruiter_name}</span>
-                            </>}
+                            {isAdmin && sub.recruiter_name && <span>· by <strong style={{ color: "var(--text-primary)" }}>{sub.recruiter_name}</strong></span>}
                         </div>
                         {(sub.requirement_name || sub.company_name) && (
-                            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-                                {sub.requirement_name}{sub.company_name ? ` · ${sub.company_name}` : ""}
-                            </div>
+                            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{sub.requirement_name}{sub.company_name ? ` · ${sub.company_name}` : ""}</div>
                         )}
                     </div>
-                    <button
-                        onClick={onClose}
-                        style={{ background: "var(--bg-secondary)", border: "1px solid var(--border-subtle)", borderRadius: 8, cursor: "pointer", fontSize: 18, color: "var(--text-secondary)", lineHeight: 1, padding: "4px 9px", flexShrink: 0, marginTop: 2 }}
-                        title="Close (Esc)"
-                    >×</button>
-                </div>
+                    <button onClick={onClose} className="btn btn-ghost btn-sm" style={{ padding: "4px 9px" }} title="Close (Esc)">×</button>
+                </header>
 
-                {/* Scrollable body */}
-                <div style={{ padding: "1.1rem 1.4rem", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: "1rem" }}>
-                    {/* Key details grid */}
+                <div style={{ flex: 1, overflowY: "auto", padding: "1.1rem 1.2rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+                    {/* Recruiter-submitted details */}
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem 1.5rem" }}>
                         <Field label="Current Role" value={sub.current_role} />
                         <Field label="Current Company" value={sub.current_company} />
+                        <Field label="Total Experience" value={sub.total_experience} />
+                        <Field label="Notice Period" value={sub.notice_period ? <span style={{ color: noticePeriodColor(sub.notice_period), fontWeight: 600 }}>{sub.notice_period}</span> : undefined} />
                         <Field label="Current CTC" value={sub.current_ctc != null ? `${sub.current_ctc} LPA` : undefined} />
                         <Field label="Expected CTC" value={sub.expected_ctc != null ? `${sub.expected_ctc} LPA` : undefined} />
-                        <Field label="Notice Period" value={
-                            sub.notice_period
-                                ? <span style={{ color: noticePeriodColor(sub.notice_period), fontWeight: 600 }}>{sub.notice_period}</span>
-                                : undefined
-                        } />
-                        <Field label="Total Experience" value={sub.total_experience} />
                     </div>
+
+                    {/* Shortlisted — admin/client-manager toggles Yes / No */}
+                    <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "0.85rem", display: "flex", alignItems: "center", gap: 12 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.6px" }}>Shortlisted</div>
+                        {isAdmin ? (
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                {shortlisted == null && (
+                                    <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 6, background: "var(--bg-secondary)", color: "var(--text-muted)", border: "1px solid var(--border-subtle)" }}>Update</span>
+                                )}
+                                <button onClick={() => setShortlist(true)} disabled={savingSL}
+                                    style={{
+                                        fontSize: 12, fontWeight: 700, padding: "4px 12px", borderRadius: 6, cursor: "pointer",
+                                        background: shortlisted === true ? "#dcfce7" : "transparent", color: "#16a34a",
+                                        border: `1px solid ${shortlisted === true ? "#16a34a" : "var(--border-subtle)"}`
+                                    }}>✓ Yes</button>
+                                <button onClick={() => setShortlist(false)} disabled={savingSL}
+                                    style={{
+                                        fontSize: 12, fontWeight: 700, padding: "4px 12px", borderRadius: 6, cursor: "pointer",
+                                        background: shortlisted === false ? "#fee2e2" : "transparent", color: "#dc2626",
+                                        border: `1px solid ${shortlisted === false ? "#dc2626" : "var(--border-subtle)"}`
+                                    }}>✗ No</button>
+                            </div>
+                        ) : (
+                            <span style={{ fontSize: 12, fontWeight: 700, color: shortlisted === true ? "#16a34a" : shortlisted === false ? "#dc2626" : "var(--text-muted)" }}>
+                                {shortlisted === true ? "✓ Yes" : shortlisted === false ? "✗ No" : "—"}
+                            </span>
+                        )}
+                    </div>
+
+                    {/* Flags */}
+                    {Array.isArray(sub.flags) && sub.flags.length > 0 && (
+                        <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "0.85rem" }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 6 }}>Flags</div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                                {sub.flags.map((f: any, i: number) => {
+                                    const warn = f.severity === "warning";
+                                    return (
+                                        <div key={i} style={{
+                                            fontSize: 12.5, padding: "5px 9px", borderRadius: 6, lineHeight: 1.4,
+                                            background: warn ? "#fef3c7" : "#dbeafe", color: warn ? "#92400e" : "#1d4ed8",
+                                            border: `1px solid ${warn ? "#fde68a" : "#bfdbfe"}`
+                                        }}>{f.message}</div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
 
                     {/* Relevant Experience */}
                     {sub.relevant_experience && (
@@ -532,21 +684,61 @@ function SubmissionDetailModal({ sub, isAdmin, onClose }: { sub: any; isAdmin: b
                         </div>
                     )}
 
-                    {/* Recruiter Comments */}
-                    {sub.recruiter_comments && (
-                        <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "0.85rem" }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 4 }}>Recruiter Comments</div>
-                            <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.55 }}>{sub.recruiter_comments}</div>
+                    {/* Comments */}
+                    <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "0.85rem" }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 6 }}>Comments</div>
+                        {isAdmin && (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+                                <textarea value={draft} onChange={e => setDraft(e.target.value)} rows={2} placeholder="Add a comment about this candidate…"
+                                    style={{ resize: "vertical", padding: "0.5rem", fontSize: 13, border: "1px solid var(--border-subtle)", borderRadius: 6, background: "var(--bg-input)", color: "var(--text-primary)" }} />
+                                <button className="btn btn-primary btn-sm" style={{ marginLeft: "auto" }} onClick={postComment} disabled={posting || !draft.trim()}>{posting ? "Posting…" : "Post comment"}</button>
+                            </div>
+                        )}
+                        {comments.length === 0
+                            ? <div style={{ fontSize: 13, color: "var(--text-muted)" }}>No comments yet.</div>
+                            : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                {comments.map((c: any, i: number) => (
+                                    <div key={i} style={{ background: "var(--bg-secondary)", borderRadius: 6, padding: "0.55rem 0.7rem" }}>
+                                        <div style={{ fontSize: 13, color: "var(--text-primary)" }}>{c.comment}</div>
+                                        <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 3 }}>
+                                            <strong style={{ color: "var(--text-primary)" }}>{c.author_name || "Unknown"}</strong>
+                                            {c.date && <> · {fmtDate(c.date)}</>}
+                                            {c.requirement_name && <> · {c.requirement_name}</>}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>}
+                    </div>
+
+                    {/* Resume — always shown at the bottom */}
+                    <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "0.85rem" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.6px" }}>Resume</div>
+                            {resumeUrl && (
+                                <div style={{ display: "flex", gap: 8 }}>
+                                    <a href={resumeUrl} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm">Open in new tab ↗</a>
+                                    <a href={resumeUrl} download={sub.candidate_name || "resume"} className="btn btn-ghost btn-sm">Download</a>
+                                </div>
+                            )}
                         </div>
-                    )}
+                        <div style={{ height: "72vh", border: "1px solid var(--border-subtle)", borderRadius: 8, overflow: "hidden", background: "var(--bg-secondary)" }}>
+                            {resumeErr
+                                ? <div style={{ padding: "1rem", fontSize: 13, color: "#dc2626" }}>{resumeErr}</div>
+                                : !resumeUrl
+                                    ? <div style={{ padding: "1rem", fontSize: 13, color: "var(--text-secondary)" }}>Loading resume…</div>
+                                    : resumeMime.includes("pdf")
+                                        ? <iframe src={resumeUrl} title="Resume" style={{ width: "100%", height: "100%", border: "none" }} />
+                                        : <div style={{ padding: "1rem", fontSize: 13, color: "var(--text-secondary)" }}>Preview is only available for PDFs — use “Open in new tab” or “Download”.</div>}
+                        </div>
+                    </div>
                 </div>
-            </div>
-        </div>
+            </aside>
+        </>
     );
 }
 
 function SubmissionsTab({ isAdmin }: { isAdmin: boolean }) {
-    const { applied, setRecruiterOptions } = useContext(FilterCtx);
+    const { applied, setRecruiterOptions, setCounts } = useContext(FilterCtx);
     const [subs, setSubs] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -593,12 +785,37 @@ function SubmissionsTab({ isAdmin }: { isAdmin: boolean }) {
         )
         : subs;
 
+    useEffect(() => {
+        setCounts(
+            <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+                Total Submissions: <strong style={{ color: "var(--text-primary)" }}>{displayed.length}</strong>
+            </div>
+        );
+        return () => setCounts(null);
+    }, [displayed.length, setCounts]);
+
     const loadMore = () => load(applied, subs.length, true);
-    const colCount = 11;
+    const colCount = 11; // Date Client Recruiter Role Candidate Exp CTC ExpCTC Notice Status Shortlisted
+
+    // Set shortlisted to an explicit Yes/No (optimistic, reverts on failure).
+    const setShortlistValue = async (appId: string, val: boolean) => {
+        const prev = subs.find(s => s.application_id === appId)?.client_shortlisted ?? null;
+        setSubs(p => p.map(s => s.application_id === appId ? { ...s, client_shortlisted: val } : s));
+        try {
+            await api.patch(`/applications/${appId}/shortlist`, { shortlisted: val });
+        } catch {
+            setSubs(p => p.map(s => s.application_id === appId ? { ...s, client_shortlisted: prev } : s));
+        }
+    };
+
+    const handleShortlistChange = (appId: string, val: boolean) => {
+        setSubs(prev => prev.map(s => s.application_id === appId ? { ...s, client_shortlisted: val } : s));
+        setSelected((sel: any) => (sel && sel.application_id === appId ? { ...sel, client_shortlisted: val } : sel));
+    };
 
     return (
         <>
-            {selected && <SubmissionDetailModal sub={selected} isAdmin={isAdmin} onClose={() => setSelected(null)} />}
+            {selected && <SubmissionDrawer sub={selected} isAdmin={isAdmin} onClose={() => setSelected(null)} onShortlist={handleShortlistChange} />}
 
             {error && <ErrMsg msg={error} />}
 
@@ -606,17 +823,17 @@ function SubmissionsTab({ isAdmin }: { isAdmin: boolean }) {
                 <div style={{ overflowX: "auto" }}>
                     <table className="data-table" style={{ tableLayout: "fixed", minWidth: 860, width: "100%" }}>
                         <colgroup>
-                            <col style={{ width: "88px" }} />
-                            <col style={{ width: "110px" }} />
+                            <col style={{ width: "82px" }} />
+                            <col style={{ width: "100px" }} />
+                            <col style={{ width: "76px" }} />
+                            <col style={{ width: "120px" }} />
+                            <col style={{ width: "120px" }} />
+                            <col style={{ width: "58px" }} />
+                            <col style={{ width: "64px" }} />
+                            <col style={{ width: "64px" }} />
                             <col style={{ width: "80px" }} />
-                            <col style={{ width: "130px" }} />
-                            <col style={{ width: "130px" }} />
-                            <col style={{ width: "62px" }} />
-                            <col style={{ width: "110px" }} />
-                            <col style={{ width: "68px" }} />
-                            <col style={{ width: "68px" }} />
-                            <col style={{ width: "88px" }} />
                             <col style={{ width: "80px" }} />
+                            <col style={{ width: "76px" }} />
                         </colgroup>
                         <thead>
                             <tr>
@@ -626,10 +843,10 @@ function SubmissionsTab({ isAdmin }: { isAdmin: boolean }) {
                                 <th style={{ fontSize: 12 }}>Role</th>
                                 <th style={{ fontSize: 12 }}>Candidate</th>
                                 <th style={{ fontSize: 12 }}>Exp</th>
-                                <th style={{ fontSize: 12 }}>Rel. Exp</th>
                                 <th style={{ fontSize: 12 }}>CTC</th>
                                 <th style={{ fontSize: 12 }}>Exp CTC</th>
                                 <th style={{ fontSize: 12 }}>Notice</th>
+                                <th style={{ fontSize: 12 }} title="Client shortlisted for interview">Shortlisted</th>
                                 <th style={{ fontSize: 12 }}>Status</th>
                             </tr>
                         </thead>
@@ -653,10 +870,17 @@ function SubmissionsTab({ isAdmin }: { isAdmin: boolean }) {
                                                 <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{dash(s.candidate_name)}</div>
                                             </td>
                                             <td style={{ ...CELL, fontSize: 12 }} title={s.total_experience}>{dash(s.total_experience)}</td>
-                                            <td style={{ ...CELL, fontSize: 12 }} title={s.relevant_experience}>{dash(s.relevant_experience)}</td>
                                             <td style={{ ...CELL, fontSize: 12 }} title={String(s.current_ctc ?? "")}>{dash(s.current_ctc)}</td>
                                             <td style={{ ...CELL, fontSize: 12 }} title={String(s.expected_ctc ?? "")}>{dash(s.expected_ctc)}</td>
                                             <td style={{ ...CELL, fontSize: 12, color: noticePeriodColor(s.notice_period), fontWeight: 600 }} title={s.notice_period}>{dash(s.notice_period)}</td>
+                                            <td onClick={e => e.stopPropagation()} style={{ textAlign: "center" }}>
+                                                {/* Editable only by admin while at SENT; locked/derived afterward. */}
+                                                <ShortlistCell
+                                                    value={s.client_shortlisted ?? null}
+                                                    editable={isAdmin && s.status === "SENT"}
+                                                    onChange={(v) => setShortlistValue(s.application_id, v)}
+                                                />
+                                            </td>
                                             <td><StatusBadge status={s.status} /></td>
                                         </tr>
                                     ))
@@ -680,8 +904,256 @@ function SubmissionsTab({ isAdmin }: { isAdmin: boolean }) {
 // TAB 4 — Interviews
 // ────────────────────────────────────────────────────────────────────────────
 
+const SCHEDULE_STATUSES = [
+    { value: "yet_to_schedule", label: "Yet to Schedule" },
+    { value: "scheduled", label: "Scheduled" },
+    { value: "rescheduled", label: "Rescheduled" },
+    { value: "no_show", label: "No Show" },
+    { value: "clear", label: "— Clear Round —" },
+];
+
+const ROUND_ARROW: Record<string, string> = { L1: "→ L2", L2: "→ L3", L3: "→ HR" };
+
+// Small truncated text cell with title tooltip
+function Trunc({ text, style }: { text: any; style?: React.CSSProperties }) {
+    const v = text == null || text === "" ? "—" : String(text);
+    return (
+        <div title={v} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", ...style }}>
+            {v}
+        </div>
+    );
+}
+
+function RoundCell({ appId, round, data, onSave, readOnly }: {
+    appId: string; round: string; data: any;
+    onSave: (appId: string, round: string, patch: any) => Promise<void>;
+    readOnly?: boolean;
+}) {
+    const savedOutcome = data?.outcome || "";
+    const savedStatus = data?.schedule_status || "yet_to_schedule";
+    const savedDate = data?.scheduled_date || "";
+    const savedTime = data?.scheduled_time || "";
+
+    const [open, setOpen] = useState(false);
+    const [status, setStatus] = useState(savedStatus);
+    const [date, setDate] = useState(savedDate);
+    const [time, setTime] = useState(savedTime);
+    const [comment, setComment] = useState("");
+    const [commentErr, setCommentErr] = useState<string | null>(null);
+    const [pendingClear, setPendingClear] = useState(false); // outcome cleared, awaiting save
+    const [saving, setSaving] = useState(false);
+    const [pos, setPos] = useState({ top: 0, left: 0 });
+    const anchorRef = useRef<HTMLDivElement>(null);
+
+    // Re-sync when parent data changes (after save)
+    useEffect(() => {
+        setStatus(data?.schedule_status || "yet_to_schedule");
+        setDate(data?.scheduled_date || "");
+        setTime(data?.scheduled_time || "");
+        setPendingClear(false);
+    }, [data]);
+
+    // Outside-click closes popover
+    useEffect(() => {
+        if (!open) return;
+        const handler = (e: MouseEvent) => {
+            const popEl = document.getElementById(`round-popover-${appId}-${round}`);
+            if (popEl?.contains(e.target as Node)) return;
+            if (anchorRef.current?.contains(e.target as Node)) return;
+            handleDiscard();
+        };
+        document.addEventListener("mousedown", handler);
+        return () => document.removeEventListener("mousedown", handler);
+    }, [open]);
+
+    const openPopover = () => {
+        if (readOnly) return;  // only admins / client managers may edit interview rounds
+        if (anchorRef.current) {
+            const rect = anchorRef.current.getBoundingClientRect();
+            const spaceBelow = window.innerHeight - rect.bottom;
+            const popH = 320;
+            const top = spaceBelow < popH ? rect.top + window.scrollY - popH - 6 : rect.bottom + window.scrollY + 6;
+            setPos({ top, left: rect.left + window.scrollX });
+        }
+        setOpen(o => !o);
+    };
+
+    // Save with the given outcome (called immediately when Passed/Rejected clicked)
+    const saveWithOutcome = async (newOutcome: string) => {
+        const c = comment.trim();
+        if (newOutcome === "rejected" && !c) {
+            setCommentErr("A comment is required when rejecting.");
+            return;
+        }
+        setCommentErr(null);
+        setSaving(true);
+        await onSave(appId, round, {
+            schedule_status: savedStatus,
+            scheduled_date: savedDate || null,
+            scheduled_time: savedTime || null,
+            outcome: newOutcome || null,
+            comment: c || null,
+        });
+        setSaving(false);
+        setComment("");
+        setOpen(false);
+    };
+
+    // Save schedule fields (+ any pending clear)
+    const saveSchedule = async () => {
+        setSaving(true);
+        const isClearRound = status === "clear";
+        await onSave(appId, round, {
+            schedule_status: isClearRound ? "yet_to_schedule" : status,
+            scheduled_date: isClearRound ? null : (date || null),
+            scheduled_time: isClearRound ? null : (time || null),
+            outcome: isClearRound || pendingClear ? null : (savedOutcome || null),
+        });
+        setSaving(false);
+        setPendingClear(false);
+        if (isClearRound) setStatus("yet_to_schedule");
+        setOpen(false);
+    };
+
+    const handleDiscard = () => {
+        setStatus(savedStatus);
+        setDate(savedDate);
+        setTime(savedTime);
+        setComment("");
+        setCommentErr(null);
+        setPendingClear(false);
+        setOpen(false);
+    };
+
+    const scheduleDirty = status !== savedStatus || date !== savedDate || time !== savedTime;
+    const needsSave = scheduleDirty || pendingClear;
+
+    // ── Badge shown in the cell ───────────────────────────────────────────
+    const base: CSSProperties = { fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 4, cursor: "pointer", display: "inline-block", whiteSpace: "nowrap" };
+    const badge = () => {
+        if (savedOutcome === "passed")
+            return <span style={{ ...base, background: "#ede9fe", color: "#7c3aed", border: "1px solid #c4b5fd" }}>{ROUND_ARROW[round] || "→"}</span>;
+        if (savedOutcome === "rejected")
+            return <span style={{ ...base, background: "#fee2e2", color: "#dc2626", border: "1px solid #fca5a5" }}>Rejected</span>;
+        if (savedStatus === "scheduled" || savedStatus === "rescheduled") {
+            const d = savedDate ? new Date(savedDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) : "";
+            return <span style={{ ...base, background: "#fef9c3", color: "#a16207", border: "1px solid #fde68a" }}>
+                {savedStatus === "rescheduled" ? "Rescheduled" : "Scheduled"}{d ? ` · ${d}` : ""}{savedTime ? ` ${savedTime}` : ""}
+            </span>;
+        }
+        if (savedStatus === "no_show")
+            return <span style={{ ...base, background: "#f3f4f6", color: "#6b7280", border: "1px solid #d1d5db" }}>No Show</span>;
+        return <span style={{ ...base, background: "var(--bg-secondary)", color: "var(--text-muted)", border: "1px solid var(--border-subtle)" }}>+ Schedule</span>;
+    };
+
+    const btnBase: CSSProperties = { fontSize: 12, padding: "7px 0", borderRadius: 6, cursor: "pointer", fontWeight: 600, border: "1px solid", flex: 1 };
+
+    const popover = open ? createPortal(
+        <div id={`round-popover-${appId}-${round}`}
+            onClick={e => e.stopPropagation()}
+            style={{ position: "absolute", top: pos.top, left: pos.left, zIndex: 9999, background: "var(--bg-primary)", border: "1px solid var(--border-subtle)", borderRadius: 10, padding: "1rem", width: 244, boxShadow: "0 8px 32px rgba(0,0,0,0.22)" }}>
+
+            {/* Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>{round} Interview</span>
+                <button onClick={handleDiscard} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "var(--text-muted)", lineHeight: 1, padding: 0 }}>×</button>
+            </div>
+
+            {/* Schedule status */}
+            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.05em" }}>Schedule Status</div>
+            <select value={status} onChange={e => setStatus(e.target.value)}
+                style={{ width: "100%", fontSize: 13, padding: "7px 10px", marginBottom: 10, border: "1px solid var(--border-subtle)", borderRadius: 6, background: "var(--bg-input)", color: "var(--text-primary)" }}>
+                {SCHEDULE_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
+
+            {(status === "scheduled" || status === "rescheduled") && (
+                <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                    <input type="date" value={date} onChange={e => setDate(e.target.value)}
+                        style={{ flex: 1, fontSize: 12, padding: "6px 8px", border: "1px solid var(--border-subtle)", borderRadius: 6, background: "var(--bg-input)", color: "var(--text-primary)" }} />
+                    <input type="text" placeholder="3 PM" value={time} onChange={e => setTime(e.target.value)}
+                        style={{ width: 70, fontSize: 12, padding: "6px 8px", border: "1px solid var(--border-subtle)", borderRadius: 6, background: "var(--bg-input)", color: "var(--text-primary)" }} />
+                </div>
+            )}
+
+            {/* Divider */}
+            <div style={{ borderTop: "1px solid var(--border-subtle)", margin: "10px 0" }} />
+
+            {/* Outcome */}
+            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Outcome</div>
+            {savedOutcome && !pendingClear && (
+                <button onClick={() => setPendingClear(true)} disabled={saving}
+                    style={{
+                        width: "100%", marginBottom: 8, fontSize: 12, padding: "5px 0", borderRadius: 4, cursor: "pointer", fontWeight: 500,
+                        background: "#fff5f5", color: "#dc2626", border: "1px solid #fca5a5"
+                    }}>
+                    × Clear current outcome ({savedOutcome})
+                </button>
+            )}
+            {pendingClear && (
+                <div style={{ marginBottom: 8, fontSize: 12, color: "#d97706", fontWeight: 600, padding: "5px 8px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 4 }}>
+                    ⚠ Outcome will be cleared on Save
+                </div>
+            )}
+
+            {/* Comment — optional on pass, required on reject. Routed to the unified comment store. */}
+            <textarea
+                value={comment}
+                onChange={e => { setComment(e.target.value); if (commentErr) setCommentErr(null); }}
+                rows={2}
+                placeholder="Comment (required to reject)…"
+                style={{ width: "100%", boxSizing: "border-box", fontSize: 12, padding: "6px 8px", marginBottom: commentErr ? 3 : 8, border: `1px solid ${commentErr ? "#fca5a5" : "var(--border-subtle)"}`, borderRadius: 6, background: "var(--bg-input)", color: "var(--text-primary)", resize: "vertical" }}
+            />
+            {commentErr && <div style={{ fontSize: 11, color: "#dc2626", marginBottom: 8 }}>{commentErr}</div>}
+
+            {/* Outcome buttons — click saves immediately */}
+            <div style={{ display: "flex", gap: 6, marginBottom: needsSave ? 10 : 0 }}>
+                <button onClick={() => !saving && saveWithOutcome("passed")} disabled={saving}
+                    style={{ ...btnBase, background: savedOutcome === "passed" && !pendingClear ? "#dcfce7" : "transparent", color: "#16a34a", borderColor: savedOutcome === "passed" && !pendingClear ? "#16a34a" : "#86efac" }}>
+                    {saving ? "…" : "✓ Passed"}
+                </button>
+                <button onClick={() => !saving && saveWithOutcome("rejected")} disabled={saving}
+                    style={{ ...btnBase, background: savedOutcome === "rejected" && !pendingClear ? "#fee2e2" : "transparent", color: "#dc2626", borderColor: savedOutcome === "rejected" && !pendingClear ? "#dc2626" : "#fca5a5" }}>
+                    {saving ? "…" : "✗ Rejected"}
+                </button>
+            </div>
+            <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: needsSave ? 10 : 4 }}>Click to save outcome immediately</div>
+
+            {/* Save / Cancel for schedule changes or clearing */}
+            {needsSave && (
+                <>
+                    {scheduleDirty && (
+                        <div style={{ fontSize: 11, color: "#d97706", marginBottom: 8, display: "flex", alignItems: "center", gap: 5 }}>
+                            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#d97706", flexShrink: 0 }} />
+                            Schedule changes not yet saved
+                        </div>
+                    )}
+                    <div style={{ display: "flex", gap: 6 }}>
+                        <button onClick={saveSchedule} disabled={saving}
+                            style={{ ...btnBase, background: "var(--accent)", color: "#fff", borderColor: "transparent", opacity: saving ? 0.7 : 1 }}>
+                            {saving ? "Saving…" : "Save Changes"}
+                        </button>
+                        <button onClick={handleDiscard} disabled={saving}
+                            style={{ fontSize: 12, padding: "7px 14px", borderRadius: 6, border: "1px solid var(--border-subtle)", background: "transparent", color: "var(--text-secondary)", cursor: "pointer" }}>
+                            Discard
+                        </button>
+                    </div>
+                </>
+            )}
+        </div>,
+        document.body
+    ) : null;
+
+    return (
+        <div ref={anchorRef} style={{ display: "inline-block" }} onClick={openPopover}>
+            {badge()}
+            {popover}
+        </div>
+    );
+}
+
 function InterviewsTab() {
-    const { applied: { client, search } } = useContext(FilterCtx);
+    const { isAdmin } = useAuth();
+    const { applied: { client, search }, setCounts } = useContext(FilterCtx);
     const [rows, setRows] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -701,53 +1173,103 @@ function InterviewsTab() {
         return mc && ms;
     });
 
-    const roundBadge = (round: any) => {
-        if (!round) return <span style={{ color: "var(--text-muted)" }}>—</span>;
-        const status = round.status || round;
-        const colors: Record<string, string> = {
-            shortlisted: "#16a34a", selected: "#16a34a", pass: "#16a34a",
-            rejected: "#dc2626", fail: "#dc2626",
-            "no show": "#d97706", rescheduled: "#d97706",
-        };
-        const color = colors[String(status).toLowerCase()] || "var(--accent)";
-        return (
-            <span style={{
-                fontSize: 11, fontWeight: 600, padding: "2px 7px", borderRadius: 999,
-                background: `${color}18`, color, border: `1px solid ${color}30`,
-            }}>{status}</span>
+    useEffect(() => {
+        let l1 = 0, l2 = 0, l3 = 0;
+        displayed.forEach(r => {
+            const sched = r.interview_schedule || {};
+            if (sched.L1 && Object.keys(sched.L1).length > 0) l1++;
+            if (sched.L2 && Object.keys(sched.L2).length > 0) l2++;
+            if (sched.L3 && Object.keys(sched.L3).length > 0) l3++;
+        });
+        setCounts(
+            <>
+                <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>L1: <strong style={{ color: "var(--text-primary)" }}>{l1}</strong></div>
+                <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>L2: <strong style={{ color: "var(--text-primary)" }}>{l2}</strong></div>
+                <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>L3/HR: <strong style={{ color: "var(--text-primary)" }}>{l3}</strong></div>
+            </>
         );
+        return () => setCounts(null);
+    }, [displayed, setCounts]);
+
+    const handleRoundSave = async (appId: string, round: string, patch: any) => {
+        try {
+            const res = await api.patch(`/applications/${appId}/interview-round`, { round, ...patch });
+            // Apply the saved round + any cascaded rounds (L1/L2 auto-passed when L2/L3 updated)
+            setRows(prev => prev.map(r => {
+                if (r.application_id !== appId) return r;
+                const updated = { ...(r.interview_schedule || {}), [round]: patch };
+                // Back-fill cascaded rounds returned by the server
+                if (res?.data && round !== "L1") updated.L1 = res.data.L1 ?? updated.L1;
+                if (res?.data && round === "L3") updated.L2 = res.data.L2 ?? updated.L2;
+
+                return {
+                    ...r,
+                    interview_schedule: updated,
+                    client_shortlisted: true,
+                    current_status: res?.status || r.current_status
+                };
+            }));
+        } catch (e: any) {
+            alert(e?.detail || "Failed to save");
+        }
     };
 
+    const outcomeBadge = (status: string) => {
+        const map: Record<string, [string, string, string]> = {
+            SELECTED: ["Selected", "#dcfce7", "#16a34a"],
+            JOINED: ["Joined", "#dcfce7", "#16a34a"],
+            OFFER_RELEASED: ["Offered", "#ede9fe", "#7c3aed"],
+            OFFER_ACCEPTED: ["Offered", "#ede9fe", "#7c3aed"],
+            REJECTED: ["Rejected", "#fee2e2", "#dc2626"],
+        };
+        const s = map[status];
+        if (!s) return <span style={{ color: "var(--text-muted)" }}>—</span>;
+        return <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: s[1], color: s[2], border: `1px solid ${s[2]}30` }}>{s[0]}</span>;
+    };
+
+    const COLS = 8;
     return (
-        <div className="data-table-wrap">
-            <table className="data-table" style={{ tableLayout: "fixed", width: "100%" }}>
+        <div className="data-table-wrap" style={{ overflowX: "auto" }}>
+            <table className="data-table" style={{ tableLayout: "fixed", width: "100%", minWidth: 800 }}>
                 <colgroup>
-                    <col style={{ width: "9%" }} /><col style={{ width: "12%" }} /><col style={{ width: "14%" }} />
-                    <col style={{ width: "13%" }} /><col style={{ width: "12%" }} /><col style={{ width: "11%" }} />
-                    <col style={{ width: "11%" }} /><col style={{ width: "10%" }} /><col style={{ width: "8%" }} />
+                    {/* Client  Role  Candidate  Recruiter  L1  L2  L3/HR  Outcome */}
+                    <col style={{ width: "10%" }} />
+                    <col style={{ width: "13%" }} />
+                    <col style={{ width: "15%" }} />
+                    <col style={{ width: "10%" }} />
+                    <col style={{ width: "17%" }} />
+                    <col style={{ width: "17%" }} />
+                    <col style={{ width: "17%" }} />
+                    <col style={{ width: "11%" }} />
                 </colgroup>
                 <thead>
                     <tr>
-                        <th>Date</th><th>Client</th><th>Role</th><th>Candidate</th><th>Recruiter</th>
-                        <th>L1</th><th>L2</th><th>L3/HR</th><th>Stage</th>
+                        <th>Client</th><th>Role</th><th>Candidate</th><th>Recruiter</th>
+                        <th>L1</th><th>L2</th><th>L3 / HR</th>
+                        <th>Outcome</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {loading ? <SkeletonRows cols={9} /> : displayed.length === 0 ? (
-                        <tr><td colSpan={9} className="table-empty">No interviews found.</td></tr>
+                    {loading ? <SkeletonRows cols={COLS} /> : displayed.length === 0 ? (
+                        <tr><td colSpan={COLS} className="table-empty">No interviews found.</td></tr>
                     ) : displayed.map((r: any) => {
-                        const rounds: any[] = r.interview_rounds || [];
+                        const sched = r.interview_schedule || {};
                         return (
                             <tr key={r.application_id}>
-                                <td style={{ fontSize: 12 }}>{fmtDate(r.l1_selected_at)}</td>
-                                <td style={{ fontWeight: 500, fontSize: 13 }}>{dash(r.company_name)}</td>
-                                <td style={{ fontSize: 13 }}>{dash(r.requirement_name)}</td>
-                                <td style={{ fontWeight: 500 }}>{dash(r.candidate_name)}</td>
-                                <td style={{ fontSize: 12 }}>{dash(r.recruiter_name)}</td>
-                                <td>{r.l1_selected_at ? roundBadge(rounds[0] || "Reached") : <span style={{ color: "var(--text-muted)" }}>—</span>}</td>
-                                <td>{r.l2_selected_at ? roundBadge(rounds[1] || "Reached") : <span style={{ color: "var(--text-muted)" }}>—</span>}</td>
-                                <td>{r.hr_round_at ? roundBadge(rounds[2] || "Reached") : <span style={{ color: "var(--text-muted)" }}>—</span>}</td>
-                                <td><StatusBadge status={r.current_status} /></td>
+                                <td><Trunc text={r.company_name} style={{ fontWeight: 500, fontSize: 13 }} /></td>
+                                <td><Trunc text={r.requirement_name} style={{ fontSize: 12 }} /></td>
+                                <td><Trunc text={r.candidate_name} style={{ fontWeight: 600, fontSize: 13 }} /></td>
+                                <td><Trunc text={r.recruiter_name} style={{ fontSize: 12 }} /></td>
+                                <td>
+                                    <RoundCell appId={r.application_id} round="L1" data={sched.L1} onSave={handleRoundSave} readOnly={!isAdmin} />
+                                </td>
+                                <td>
+                                    <RoundCell appId={r.application_id} round="L2" data={sched.L2} onSave={handleRoundSave} readOnly={!isAdmin} />
+                                </td>
+                                <td>
+                                    <RoundCell appId={r.application_id} round="L3" data={sched.L3} onSave={handleRoundSave} readOnly={!isAdmin} />
+                                </td>
+                                <td>{outcomeBadge(r.current_status)}</td>
                             </tr>
                         );
                     })}
@@ -1025,14 +1547,24 @@ function InsightsTab() {
 const FILTER_TABS = ["tracker", "submissions", "interviews", "selections"];
 
 export default function Analytics() {
+    useDocumentTitle("Analytics");
     const { isAdmin } = useAuth();
     const [activeTab, setActiveTab] = useState("overview");
+    const [searchParams, setSearchParams] = useSearchParams();
 
     const emptyFilters: AppliedFilters = { client: "", search: "", status: "", recruiterId: "" };
-    const [draft, setDraft] = useState<AppliedFilters>(emptyFilters);
-    const [applied, setApplied] = useState<AppliedFilters>(emptyFilters);
+
+    // Initialize draft from URL params
+    const initialDraft: AppliedFilters = {
+        client: searchParams.get("client") || "",
+        search: searchParams.get("search") || "",
+        status: searchParams.get("status") || "",
+        recruiterId: searchParams.get("recruiterId") || ""
+    };
+    const [draft, setDraft] = useState<AppliedFilters>(initialDraft);
     const [clientOptions, setClientOptions] = useState<string[]>([]);
     const [recruiterOptions, setRecruiterOptions] = useState<{ id: string; name: string }[]>([]);
+    const [counts, setCounts] = useState<React.ReactNode>(null);
 
     useEffect(() => {
         analyticsApi.getRequirementsTracker()
@@ -1043,9 +1575,19 @@ export default function Analytics() {
             .catch(() => { });
     }, []);
 
-    const handleApply = () => setApplied({ ...draft });
-    const handleClear = () => { setDraft(emptyFilters); setApplied(emptyFilters); };
-    const hasFilters = Object.values(applied).some(v => v !== "");
+    const handleApply = () => {
+        const p = new URLSearchParams(searchParams);
+        if (draft.client) p.set("client", draft.client); else p.delete("client");
+        if (draft.search) p.set("search", draft.search); else p.delete("search");
+        if (draft.status) p.set("status", draft.status); else p.delete("status");
+        if (draft.recruiterId) p.set("recruiterId", draft.recruiterId); else p.delete("recruiterId");
+        setSearchParams(p);
+    };
+    const handleClear = () => {
+        setDraft(emptyFilters);
+        setSearchParams(new URLSearchParams());
+    };
+    const hasFilters = Object.values(draft).some(v => v !== "");
 
     const tabs = [
         { key: "overview", label: "Overview" },
@@ -1060,7 +1602,7 @@ export default function Analytics() {
     ];
 
     return (
-        <FilterCtx.Provider value={{ applied, recruiterOptions, setRecruiterOptions }}>
+        <FilterCtx.Provider value={{ applied: draft, recruiterOptions, setRecruiterOptions, setCounts }}>
             <style>{`
                 @keyframes ana-pulse { 0%,100%{opacity:.45} 50%{opacity:.9} }
                 .ana-skel { background: var(--bg-secondary); animation: ana-pulse 1.5s ease-in-out infinite; }
@@ -1104,6 +1646,9 @@ export default function Analytics() {
                     {hasFilters && (
                         <button className="btn btn-ghost btn-sm" onClick={handleClear}>Clear</button>
                     )}
+                    <div style={{ marginLeft: "auto", display: "flex", gap: "1rem", alignItems: "center" }}>
+                        {counts}
+                    </div>
                 </div>
             )}
 

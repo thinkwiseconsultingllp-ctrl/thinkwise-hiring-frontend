@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, API_BASE, getToken } from "../services/api";
 
@@ -96,6 +97,7 @@ export default function ProfileFullView() {
     useEffect(() => { void load(); }, [load]);
 
     const name = profile?.candidate?.Name || profile?.deterministic_scoring_analysis?.candidate_name || "Profile";
+    useDocumentTitle(name);
     const det = profile?.deterministic_scoring_analysis;
     const llm = profile?.llm_analysis;
 

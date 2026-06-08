@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { analyticsApi } from "../services/api";
 import StatusBadge from "../components/StatusBadge";
 import "../styles/pages.css";
@@ -104,6 +105,7 @@ function SubmissionModal({ sub, onClose }: { sub: any; onClose: () => void }) {
 }
 
 export default function MySubmissions() {
+    useDocumentTitle("My Submissions");
     const [subs, setSubs] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);

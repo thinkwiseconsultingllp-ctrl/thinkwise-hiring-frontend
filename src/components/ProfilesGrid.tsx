@@ -10,6 +10,7 @@ interface ProfilesGridProps {
     minExperience?: number | null;
     maxExperience?: number | null;
     onSubmit?: (profile: Profile) => void;
+    onRemove?: (profile: Profile) => void;
     currentUserId?: string;
     isAdmin?: boolean;
 }
@@ -84,7 +85,7 @@ function firstName(name?: string | null): string {
     return name.split(" ")[0];
 }
 
-export default function ProfilesGrid({ profiles, jdId, jobRole, currentUserId, isAdmin }: ProfilesGridProps) {
+export default function ProfilesGrid({ profiles, jdId, jobRole, onRemove, currentUserId, isAdmin }: ProfilesGridProps) {
     const drawer = useSideDrawer();
     const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "smart", dir: "desc" });
     const [page, setPage] = useState(1);
@@ -285,7 +286,10 @@ export default function ProfilesGrid({ profiles, jdId, jobRole, currentUserId, i
                         const det = detScore(p);
                         const llm = p.llm_analysis?.overall_score;
                         const hasAi = llm != null;
-                        const name = p.candidate?.Name || p.deterministic_scoring_analysis?.candidate_name || "Unknown";
+                        const aiStatus = p.candidate?.ai_status;
+                        const aiPending = aiStatus === "pending" || aiStatus === "processing";
+                        const fileNameBase = (p.candidate?.resume_filename || "").replace(/\.[^.]+$/, "");
+                        const name = p.candidate?.Name || p.deterministic_scoring_analysis?.candidate_name || (aiPending ? (fileNameBase || "Structuring…") : "Unknown");
                         const role = p.deterministic_scoring_analysis?.current_role || "—";
                         const expLabel: string | null = p.candidate?.experience_label ?? null;
                         const expYrs = p.deterministic_scoring_analysis?.total_experience_years;
@@ -322,6 +326,14 @@ export default function ProfilesGrid({ profiles, jdId, jobRole, currentUserId, i
                                 <td style={{ paddingTop: "0.55rem", paddingBottom: "0.55rem", overflow: "hidden", maxWidth: 0 }}>
                                     <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", overflow: "hidden" }}>
                                         <span style={{ fontSize: 13.5, fontWeight: 700, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+                                        {aiPending && (
+                                            <span style={{
+                                                fontSize: 9, fontWeight: 700, padding: "2px 5px", borderRadius: 3, flexShrink: 0,
+                                                background: "#fef3c7", color: "#92400e", border: "1px solid #fde68a",
+                                            }} title="AI structuring queued — name, skills and score update automatically when done">
+                                                {aiStatus === "processing" ? "Structuring…" : "In queue"}
+                                            </span>
+                                        )}
                                         {titleMatch && (
                                             <span style={{
                                                 fontSize: 9, fontWeight: 700, padding: "2px 5px", borderRadius: 3, flexShrink: 0,
@@ -423,6 +435,14 @@ export default function ProfilesGrid({ profiles, jdId, jobRole, currentUserId, i
                                                 : "Notes"}
                                         </button>
                                         <button className="btn btn-ghost btn-sm" style={{ width: "80px", justifyContent: "center" }} onClick={() => openUpdate(p)} title="Update candidate info">Edit</button>
+                                        {onRemove && (appStatus == null || appStatus === "SENT" || isAdmin) && (
+                                            <button
+                                                className="btn btn-ghost btn-sm"
+                                                style={{ width: "80px", justifyContent: "center", color: "var(--danger, #dc2626)" }}
+                                                onClick={() => onRemove(p)}
+                                                title="Remove this candidate from the requirement"
+                                            >Remove</button>
+                                        )}
                                         {appStatus ? (
                                             <span style={{ fontSize: 12, fontWeight: 700, alignSelf: "center", color: appStatusColor(appStatus) }}>
                                                 {formatAppStatus(appStatus)}

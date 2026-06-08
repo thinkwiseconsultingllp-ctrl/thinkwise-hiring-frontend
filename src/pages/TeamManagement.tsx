@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import Icon from "../components/Icon";
@@ -24,6 +25,7 @@ interface Invite {
 type Tab = "active" | "inactive" | "invites";
 
 export default function TeamManagement() {
+    useDocumentTitle("Team Management");
     const { isSuperAdmin, user: currentUser } = useAuth();
     const [users, setUsers] = useState<User[]>([]);
     const [invites, setInvites] = useState<Invite[]>([]);
@@ -214,7 +216,7 @@ export default function TeamManagement() {
                     if (tab === "inactive" && inactiveUsers.length === 0) return null;
                     const label = tab === "active" ? `Active (${activeUsers.length})`
                         : tab === "inactive" ? `Inactive (${inactiveUsers.length})`
-                        : `Approved Emails (${invites.filter(i => !i.used).length})`;
+                            : `Approved Emails (${invites.filter(i => !i.used).length})`;
                     return (
                         <button key={tab} onClick={() => setActiveTab(tab)} style={{
                             background: 'none', border: 'none',

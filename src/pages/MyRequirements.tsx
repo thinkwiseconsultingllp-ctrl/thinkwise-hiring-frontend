@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../services/api";
@@ -23,6 +24,7 @@ interface Requirement {
 }
 
 export default function MyRequirements() {
+    useDocumentTitle("My Requirements");
     const { user } = useAuth();
     const navigate = useNavigate();
     const [search, setSearch] = useState("");

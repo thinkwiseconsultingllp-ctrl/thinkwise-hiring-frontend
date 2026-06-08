@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { Link } from "react-router-dom";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
@@ -25,9 +26,10 @@ function fmtDate(value?: string | null): string {
 }
 
 export default function AssignmentRequests() {
+    useDocumentTitle("Assignment Requests");
     const { isAdmin, user } = useAuth();
     const [requests, setRequests] = useState<AssignmentRequest[]>([]);
-    const [tab, setTab] = useState<"pending" | "approved" | "rejected" | "all">("pending");
+    const [tab, setTab] = useState<"pending" | "approved" | "rejected" | "all">("all");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [acting, setActing] = useState<Set<string>>(new Set());
@@ -165,12 +167,12 @@ export default function AssignmentRequests() {
                                             fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 999,
                                             background:
                                                 r.status === "approved" ? "rgba(22, 163, 74, 0.15)" :
-                                                r.status === "rejected" ? "rgba(220, 38, 38, 0.15)" :
-                                                "rgba(202, 138, 4, 0.15)",
+                                                    r.status === "rejected" ? "rgba(220, 38, 38, 0.15)" :
+                                                        "rgba(202, 138, 4, 0.15)",
                                             color:
                                                 r.status === "approved" ? "#16a34a" :
-                                                r.status === "rejected" ? "#dc2626" :
-                                                "#ca8a04",
+                                                    r.status === "rejected" ? "#dc2626" :
+                                                        "#ca8a04",
                                             textTransform: "uppercase", letterSpacing: 0.4,
                                         }}>{r.status}</span>
                                     </td>

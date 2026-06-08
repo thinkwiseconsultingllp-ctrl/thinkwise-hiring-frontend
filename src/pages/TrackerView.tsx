@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { useParams, useNavigate } from "react-router-dom";
 import { api, getToken, API_BASE } from "../services/api";
 import Icon from "../components/Icon";
@@ -18,6 +19,7 @@ interface TrackerRow {
 }
 
 export default function TrackerView() {
+    useDocumentTitle("Tracker Preview");
     const { reqId } = useParams<{ reqId: string }>();
     const navigate = useNavigate();
     const [rows, setRows] = useState<TrackerRow[]>([]);

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../services/api";
@@ -260,6 +261,7 @@ export default function RequirementDetail() {
     const navigate = useNavigate();
     const { openJd, activeReq: jdActiveReq } = useJdViewer();
     const [req, setReq] = useState<Requirement | null>(null);
+    useDocumentTitle(req?.requirement_name || "Requirement");
     const [applications, setApplications] = useState<Application[]>([]);
     const [loading, setLoading] = useState(true);
     const [_showJd, _setShowJd] = useState(false);
@@ -296,6 +298,15 @@ export default function RequirementDetail() {
         queryFn: () => api.get(`/requirements/${id}/profiles`),
         enabled: !!id,
         staleTime: 30 * 1000,
+        // While any profile is still being structured by the AI worker, poll so the grid
+        // updates (name / role / score fill in) once structuring completes. Stops at 0 pending.
+        refetchInterval: (query: any) => {
+            const profs: any[] = query?.state?.data?.profiles ?? [];
+            const anyPending = profs.some(
+                (p) => p?.candidate?.ai_status === "pending" || p?.candidate?.ai_status === "processing"
+            );
+            return anyPending ? 5000 : false;
+        },
     });
     const suggestions: any[] = _profilesResult?.profiles ?? [];
     const fetchProfiles = () => _refetchProfiles();
@@ -304,6 +315,8 @@ export default function RequirementDetail() {
     const [manualUploading, setManualUploading] = useState(false);
     const [manualUploadStage, setManualUploadStage] = useState<string>("");
     const [manualUploadError, setManualUploadError] = useState<string | null>(null);
+    type UploadDuplicate = { filename: string; message: string; candidate_id?: string };
+    const [uploadDuplicates, setUploadDuplicates] = useState<UploadDuplicate[]>([]);
 
     const [mainTab, setMainTab] = useState<"submissions" | "profiles">("submissions");
 
@@ -475,11 +488,20 @@ export default function RequirementDetail() {
         setManualUploading(true);
         setManualUploadError(null);
         setManualUploadStage(`Uploading ${files.length} file${files.length > 1 ? "s" : ""}…`);
+        setUploadDuplicates([]);
         try {
             const form = new FormData();
             Array.from(files).forEach(f => form.append("resume_files", f));
             const result = await api.post(`/requirements/${id}/profiles/upload`, form);
-            setManualUploadStage(`Uploaded ${result.uploaded}, failed ${result.failed}`);
+            const dupes: UploadDuplicate[] = (result.items ?? [])
+                .filter((item: any) => item.status === "duplicate")
+                .map((item: any) => ({ filename: item.filename, message: item.message || "", candidate_id: item.candidate_id }));
+            setUploadDuplicates(dupes);
+            const parts = [];
+            if (result.uploaded) parts.push(`${result.uploaded} uploaded`);
+            if (dupes.length) parts.push(`${dupes.length} duplicate${dupes.length > 1 ? "s" : ""} skipped`);
+            if (result.failed) parts.push(`${result.failed} failed`);
+            setManualUploadStage(parts.join(", ") || "Upload complete");
             await fetchProfiles();
         } catch (err: any) {
             setManualUploadError(err?.detail || err?.message || "Upload failed");
@@ -487,7 +509,7 @@ export default function RequirementDetail() {
             setTimeout(() => {
                 setManualUploading(false);
                 setManualUploadStage("");
-            }, 1500);
+            }, 3000);
         }
     };
 
@@ -538,6 +560,20 @@ export default function RequirementDetail() {
             setStatusNotes("");
         } catch (err: any) {
             setStatusError(err.detail || "Failed to update status");
+        }
+    };
+
+    // Remove a candidate's profile from this requirement (deletes the profile row +
+    // the application if it hasn't progressed in the client pipeline).
+    const handleRemoveProfile = async (profile: any) => {
+        if (!id) return;
+        const name = profile.candidate?.Name || profile.deterministic_scoring_analysis?.candidate_name || "this candidate";
+        if (!window.confirm(`Remove ${name} from ${req?.requirement_name || "this requirement"}?\n\nThe candidate stays in the talent pool — only the link to this requirement is removed.`)) return;
+        try {
+            await api.delete(`/requirements/${id}/profiles/${profile.candidate_uuid}`);
+            await fetchProfiles();
+        } catch (err: any) {
+            alert(err?.detail || err?.message || "Failed to remove profile");
         }
     };
 
@@ -973,7 +1009,7 @@ export default function RequirementDetail() {
                                                                 onClick={() => { setSelectedApp(app); setNewStatus(""); setRejectionReason(""); setStatusNotes(""); setStatusError(""); }}
                                                             >Update</button>
                                                         )}
-                                                        {!isAdmin && app.status === "SENT" && String(app.recruiter_id) === String(user?.id) && (
+                                                        {app.status === "SENT" && String(app.recruiter_id) === String(user?.id) && (
                                                             <button
                                                                 className="btn btn-ghost btn-sm"
                                                                 style={{ color: "var(--error, #e53e3e)", padding: "2px 8px" }}
@@ -1006,7 +1042,7 @@ export default function RequirementDetail() {
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", gap: "0.75rem", flexWrap: "wrap" }}>
                                 <div style={{ fontSize: "13px", color: "var(--text-secondary)" }}>
                                     {loadingSuggestions ? "Loading…" : `${suggestions.length} profile${suggestions.length === 1 ? "" : "s"}`}
-                                    {manualUploading && manualUploadStage && <span style={{ marginLeft: "0.75rem" }}>{manualUploadStage}</span>}
+                                    {manualUploadStage && <span style={{ marginLeft: "0.75rem" }}>{manualUploadStage}</span>}
                                     {manualUploadError && <span style={{ marginLeft: "0.75rem", color: "#dc2626" }}>{manualUploadError}</span>}
                                     {suggestionsError && <span style={{ marginLeft: "0.75rem", color: "#dc2626" }}>{suggestionsError}</span>}
                                 </div>
@@ -1033,11 +1069,31 @@ export default function RequirementDetail() {
                                     </label>
                                 </div>
                             </div>
+                            {uploadDuplicates.length > 0 && (
+                                <div style={{ marginBottom: "0.75rem", padding: "10px 14px", background: "color-mix(in srgb, #f59e0b 8%, transparent)", border: "1px solid color-mix(in srgb, #f59e0b 30%, transparent)", borderRadius: "8px", fontSize: "13px" }}>
+                                    <div style={{ fontWeight: 600, marginBottom: "5px" }}>{uploadDuplicates.length} duplicate{uploadDuplicates.length > 1 ? "s" : ""} skipped — already in this requirement's pool:</div>
+                                    <ul style={{ margin: 0, paddingLeft: "16px", display: "flex", flexDirection: "column", gap: "4px" }}>
+                                        {uploadDuplicates.map((d, i) => (
+                                            <li key={i} style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                                                <span style={{ fontWeight: 500, color: "var(--text-primary)" }}>{d.filename}</span>
+                                                {d.message && <span style={{ color: "var(--text-secondary)" }}>— {d.message}</span>}
+                                                {d.candidate_id && (
+                                                    <button
+                                                        onClick={() => navigate(`/talent-pool/${d.candidate_id}`)}
+                                                        style={{ background: "none", border: "1px solid var(--border-subtle)", borderRadius: 4, padding: "1px 8px", fontSize: 11, cursor: "pointer", color: "var(--primary, #2563eb)", fontWeight: 600 }}
+                                                    >View in pool →</button>
+                                                )}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
                             <ProfilesGrid
                                 profiles={suggestions}
                                 jdId={id!}
                                 jobRole={req.job_role ?? req.requirement_name}
                                 onSubmit={handleSubmitProfile}
+                                onRemove={handleRemoveProfile}
                                 currentUserId={user?.id}
                                 isAdmin={isAdmin}
                             />

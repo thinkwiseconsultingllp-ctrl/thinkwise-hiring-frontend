@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { useParams, useNavigate } from "react-router-dom";
 import { API_BASE, api, getToken } from "../services/api";
 import { useAuth } from "../context/AuthContext";
@@ -56,6 +57,7 @@ export default function CandidateDetail() {
   const { isAdmin } = useAuth();
 
   const [candidate, setCandidate] = useState<Candidate | null>(null);
+  useDocumentTitle(candidate?.Name || "Candidate");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [resumeLoading, setResumeLoading] = useState(false);
@@ -371,9 +373,9 @@ export default function CandidateDetail() {
               {reqHistory.map((h, i) => {
                 const statusColor = h.status === "SELECTED" ? "#16a34a"
                   : h.status === "REJECTED" ? "#dc2626"
-                  : h.status === "SENT" ? "#2563eb"
-                  : h.status ? "#ca8a04"
-                  : "var(--text-muted)";
+                    : h.status === "SENT" ? "#2563eb"
+                      : h.status ? "#ca8a04"
+                        : "var(--text-muted)";
                 const STATUS_LABEL: Record<string, string> = {
                   SENT: "Submitted", L1_SELECTED: "L1 Selected", L2_SELECTED: "L2 Selected",
                   L3_SELECTED: "L3 Selected", HR_ROUND: "HR Round", HR_SELECTED: "HR Selected",

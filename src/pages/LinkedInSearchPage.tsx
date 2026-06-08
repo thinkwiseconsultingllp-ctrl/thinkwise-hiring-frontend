@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../services/api";
 import "../styles/pages.css";
@@ -9,6 +10,7 @@ interface SearchResponse {
 }
 
 export default function LinkedInSearchPage() {
+    useDocumentTitle("LinkedIn Search");
     const [searchParams] = useSearchParams();
 
     const [jobTitle, setJobTitle] = useState("");
@@ -39,9 +41,9 @@ export default function LinkedInSearchPage() {
                 job_title: jobTitle,
                 keywords: skills
                     ? skills
-                          .split(",")
-                          .map((s) => s.trim())
-                          .filter(Boolean)
+                        .split(",")
+                        .map((s) => s.trim())
+                        .filter(Boolean)
                     : [],
                 location: location || null,
                 experience_years: experience ? parseInt(experience) : null,

@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../services/api";
@@ -463,6 +464,7 @@ function RecruiterAssignmentsTable({ requirements }: { requirements: Requirement
 }
 
 export default function Dashboard() {
+    useDocumentTitle("Dashboard");
     const { user, isAdmin, isSuperAdmin } = useAuth();
     const navigate = useNavigate();
     const [assigning, setAssigning] = useState<string | null>(null);

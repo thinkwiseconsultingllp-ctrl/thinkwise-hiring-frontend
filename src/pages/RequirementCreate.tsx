@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../services/api";
 import Icon from "../components/Icon";
@@ -192,6 +193,7 @@ const SKILL_PREFERENCE_OPTIONS = [
 const SKILL_PREFERENCE_HEADER = "Skill Preferences:";
 
 export default function RequirementCreate() {
+    useDocumentTitle("Create Requirement");
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const [error, setError] = useState("");

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { useNavigate } from "react-router-dom";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
@@ -40,6 +41,7 @@ function getDisplayRole(c: Candidate): string | null {
 }
 
 export default function TalentPool() {
+  useDocumentTitle("Talent Pool");
   const { isAdmin, isRecruiter, user } = useAuth();
   const navigate = useNavigate();
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -56,7 +58,7 @@ export default function TalentPool() {
   const [roleInput, setRoleInput] = useState("");
   const [expMin, setExpMin] = useState("");
   const [expMax, setExpMax] = useState("");
-  type DuplicateDetail = { filename: string; message: string };
+  type DuplicateDetail = { filename: string; message: string; candidate_id?: string };
   const [skippedFiles, setSkippedFiles] = useState<DuplicateDetail[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -137,7 +139,7 @@ export default function TalentPool() {
         aiFailedCount += res.ai_failed_count || 0;
         if (res.items) {
           for (const item of res.items) {
-            if (item.status === "duplicate") skipped.push({ filename: item.filename, message: item.message || "" });
+            if (item.status === "duplicate") skipped.push({ filename: item.filename, message: item.message || "", candidate_id: item.candidate_id ? String(item.candidate_id) : undefined });
             if (item.status === "failed") failedDetails.push(`${item.filename}: ${item.message || "unknown error"}`);
           }
         }
@@ -493,12 +495,18 @@ export default function TalentPool() {
       {notice && <div className="form-success" style={{ marginBottom: skippedFiles.length > 0 ? "0.5rem" : "1rem" }}>{notice}</div>}
       {skippedFiles.length > 0 && (
         <div style={{ marginBottom: "1rem", padding: "12px 16px", background: "color-mix(in srgb, var(--warning, #f59e0b) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--warning, #f59e0b) 30%, transparent)", borderRadius: "10px", fontSize: "13px" }}>
-          <div style={{ fontWeight: 600, marginBottom: "6px" }}>{skippedFiles.length} duplicate{skippedFiles.length > 1 ? "s" : ""} skipped — already in pool:</div>
-          <ul style={{ margin: 0, paddingLeft: "18px", display: "flex", flexDirection: "column", gap: "3px" }}>
+          <div style={{ fontWeight: 600, marginBottom: "6px" }}>{skippedFiles.length} duplicate{skippedFiles.length > 1 ? "s" : ""} skipped — already in talent pool:</div>
+          <ul style={{ margin: 0, paddingLeft: "18px", display: "flex", flexDirection: "column", gap: "5px" }}>
             {skippedFiles.map((f, i) => (
-              <li key={i} style={{ color: "var(--text-secondary)" }}>
-                <span style={{ fontWeight: 500 }}>{f.filename}</span>
-                {f.message && <span style={{ color: "var(--text-tertiary, #9ca3af)", marginLeft: 6 }}>— {f.message}</span>}
+              <li key={i} style={{ color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                <span style={{ fontWeight: 500, color: "var(--text-primary)" }}>{f.filename}</span>
+                {f.message && <span style={{ color: "var(--text-tertiary, #9ca3af)" }}>— {f.message}</span>}
+                {f.candidate_id && (
+                  <button
+                    onClick={() => navigate(`/talent-pool/${f.candidate_id}`)}
+                    style={{ background: "none", border: "1px solid var(--border-subtle)", borderRadius: 4, padding: "1px 8px", fontSize: 11, cursor: "pointer", color: "var(--primary, #2563eb)", fontWeight: 600, flexShrink: 0 }}
+                  >View →</button>
+                )}
               </li>
             ))}
           </ul>
@@ -540,57 +548,59 @@ export default function TalentPool() {
           {filteredCandidates.map((candidate) => {
             const displayRole = getDisplayRole(candidate);
             return (
-              <div
-                key={candidate.id}
-                className={`talent-card ${selectedIdSet.has(candidate.id) ? "talent-card--selected" : ""}`}
-                role="button"
-                tabIndex={0}
-                onClick={(e) => { if (e.ctrlKey || e.metaKey) { window.open(`/talent-pool/${candidate.id}`, '_blank'); } else { navigate(`/talent-pool/${candidate.id}`); } }}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (e.ctrlKey || e.metaKey) { window.open(`/talent-pool/${candidate.id}`, '_blank'); } else { navigate(`/talent-pool/${candidate.id}`); } } }}
-              >
-                <div className="talent-card-actions">
-                  <label className="talent-select-toggle" onClick={(e) => e.stopPropagation()}>
-                    <input type="checkbox" checked={selectedIdSet.has(candidate.id)} onChange={() => toggleCandidateSelection(candidate.id)} aria-label={`Select ${candidate.Name}`} />
-                    <span>Select</span>
-                  </label>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={(e) => { e.stopPropagation(); void openCommentsModal(candidate); }}
-                  >Comments</button>
-                  {isAdmin && (
-                    <button type="button" className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); void handleDeleteCandidate(candidate); }} disabled={deleting} style={{ color: "var(--danger)" }}>Delete</button>
-                  )}
-                </div>
-                <div className="talent-card-top">
-                  <strong className="talent-name">{candidate.Name || "Unknown Candidate"}</strong>
-                </div>
-                {displayRole && <div className="talent-role">{displayRole}</div>}
-                <div className="talent-meta-row">
-                  <span>{candidate.experience_label || "-"}</span>
-                  {(() => {
-                    const ch = (candidate as any).source_channel as string | undefined;
-                    const label = ch === "email" ? "Email" : ch === "bulk" ? "Bulk" : ch === "manual" ? "Manual" : null;
-                    const color = ch === "email" ? { bg: "#dbeafe", text: "#1d4ed8", border: "#bfdbfe" }
-                      : ch === "bulk" ? { bg: "#fef3c7", text: "#92400e", border: "#fde68a" }
-                        : ch === "manual" ? { bg: "#dcfce7", text: "#166534", border: "#bbf7d0" }
-                          : null;
-                    return label && color ? (
-                      <span style={{
-                        fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 3,
-                        background: color.bg, color: color.text, border: `1px solid ${color.border}`,
-                        marginLeft: 4,
-                      }}>{label}</span>
-                    ) : null;
-                  })()}
-                </div>
-                {candidate.uploaded_by_name && (
-                  <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: "0.15rem" }}>
-                    Owned by <strong>{candidate.uploaded_by_name}</strong>
+              <a href={`/talent-pool/${candidate.id}`}>
+                <div
+                  key={candidate.id}
+                  className={`talent-card ${selectedIdSet.has(candidate.id) ? "talent-card--selected" : ""}`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => { if (e.ctrlKey || e.metaKey) { window.open(`/talent-pool/${candidate.id}`, '_blank'); } else { navigate(`/talent-pool/${candidate.id}`); } }}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (e.ctrlKey || e.metaKey) { window.open(`/talent-pool/${candidate.id}`, '_blank'); } else { navigate(`/talent-pool/${candidate.id}`); } } }}
+                >
+                  <div className="talent-card-actions">
+                    <label className="talent-select-toggle" onClick={(e) => e.stopPropagation()}>
+                      <input type="checkbox" checked={selectedIdSet.has(candidate.id)} onChange={() => toggleCandidateSelection(candidate.id)} aria-label={`Select ${candidate.Name}`} />
+                      <span>Select</span>
+                    </label>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={(e) => { e.stopPropagation(); void openCommentsModal(candidate); }}
+                    >Comments</button>
+                    {isAdmin && (
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); void handleDeleteCandidate(candidate); }} disabled={deleting} style={{ color: "var(--danger)" }}>Delete</button>
+                    )}
                   </div>
-                )}
-                {candidate.resume_filename && <div className="talent-file" title={candidate.resume_filename}>{candidate.resume_filename}</div>}
-              </div>
+                  <div className="talent-card-top">
+                    <strong className="talent-name">{candidate.Name || "Unknown Candidate"}</strong>
+                  </div>
+                  {displayRole && <div className="talent-role">{displayRole}</div>}
+                  <div className="talent-meta-row">
+                    <span>{candidate.experience_label || "-"}</span>
+                    {(() => {
+                      const ch = (candidate as any).source_channel as string | undefined;
+                      const label = ch === "email" ? "Email" : ch === "bulk" ? "Bulk" : ch === "manual" ? "Manual" : null;
+                      const color = ch === "email" ? { bg: "#dbeafe", text: "#1d4ed8", border: "#bfdbfe" }
+                        : ch === "bulk" ? { bg: "#fef3c7", text: "#92400e", border: "#fde68a" }
+                          : ch === "manual" ? { bg: "#dcfce7", text: "#166534", border: "#bbf7d0" }
+                            : null;
+                      return label && color ? (
+                        <span style={{
+                          fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 3,
+                          background: color.bg, color: color.text, border: `1px solid ${color.border}`,
+                          marginLeft: 4,
+                        }}>{label}</span>
+                      ) : null;
+                    })()}
+                  </div>
+                  {candidate.uploaded_by_name && (
+                    <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: "0.15rem" }}>
+                      Owned by <strong>{candidate.uploaded_by_name}</strong>
+                    </div>
+                  )}
+                  {candidate.resume_filename && <div className="talent-file" title={candidate.resume_filename}>{candidate.resume_filename}</div>}
+                </div>
+              </a>
             );
           })}
         </div>
