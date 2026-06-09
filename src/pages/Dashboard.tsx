@@ -542,7 +542,12 @@ export default function Dashboard() {
         return clientNames.find(n => toSlug(n) === clientSlug) || null;
     }, [clientSlug, clientNames]);
 
-    const clientRequirements = selectedClient ? (clientsMap.get(selectedClient) || []) : [];
+    // Use slug-based match so "Cohere Health" and "cohere health" are treated as the same company.
+    const clientRequirements = useMemo(() => {
+        if (!selectedClient) return [];
+        const slug = toSlug(selectedClient);
+        return requirements.filter(r => toSlug(r.company_name || "") === slug);
+    }, [selectedClient, requirements]);
 
     // True if the current user is an assigned client manager for the selected client.
     // Use slug comparison so "ctrls" matches "CtrlS" (same slug "ctrls").
@@ -728,7 +733,7 @@ export default function Dashboard() {
     // ── Requirement detail view (/dashboard/:clientSlug/:reqSlug) ─────────────
     // Fast path: caller passed reqId in navigation state (from Analytics row click)
     if (reqIdFromState) {
-        return <RequirementDetail reqId={reqIdFromState} />;
+        return <RequirementDetail key={reqIdFromState} reqId={reqIdFromState} />;
     }
     // Slug-resolution fallback (for direct URL access or Dashboard table row click)
     if (reqSlug) {
@@ -736,7 +741,7 @@ export default function Dashboard() {
         const matchedReq = requirements.find(
             r => toSlug(r.company_name || "") === clientSlug && toSlug(r.requirement_name || "") === reqSlug
         );
-        if (matchedReq) return <RequirementDetail reqId={matchedReq.id} />;
+        if (matchedReq) return <RequirementDetail key={matchedReq.id} reqId={matchedReq.id} />;
         // No match — fall through to client view (slug may be stale)
     }
 

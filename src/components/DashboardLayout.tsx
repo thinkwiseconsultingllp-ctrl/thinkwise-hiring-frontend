@@ -54,12 +54,11 @@ function DashboardLayoutInner() {
         try { return new Set(JSON.parse(localStorage.getItem("tw_dismissed_notifs") || "[]")); }
         catch { return new Set(); }
     });
-    const bellRef = useRef<HTMLDivElement>(null);
-
-    const getReadIds = (): Set<string> => {
+    const [readIds, setReadIds] = useState<Set<string>>(() => {
         try { return new Set(JSON.parse(localStorage.getItem("tw_read_notifs") || "[]")); }
         catch { return new Set(); }
-    };
+    });
+    const bellRef = useRef<HTMLDivElement>(null);
 
     const saveDismissed = (ids: Set<string>) => {
         localStorage.setItem("tw_dismissed_notifs", JSON.stringify([...ids]));
@@ -103,14 +102,15 @@ function DashboardLayoutInner() {
         return () => document.removeEventListener("mousedown", handler);
     }, []);
 
-    const readIds = getReadIds();
     const visibleNotifications = notifications.filter(n => !dismissedIds.has(n.id));
     const unreadCount = visibleNotifications.filter(n => !readIds.has(n.id)).length;
 
     const handleBellClick = () => {
         setBellOpen(prev => !prev);
         if (!bellOpen) {
-            localStorage.setItem("tw_read_notifs", JSON.stringify(notifications.map(n => n.id)));
+            const allIds = notifications.map(n => n.id);
+            localStorage.setItem("tw_read_notifs", JSON.stringify(allIds));
+            setReadIds(new Set(allIds));
         }
     };
 

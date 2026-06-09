@@ -59,6 +59,7 @@ interface Requirement {
     id: string;
     req_id: string;
     requirement_name: string;
+    company_name?: string | null;
     job_role?: string | null;
     jd: string | null;
     evaluation_dimensions?: Array<Record<string, any>>;
@@ -262,6 +263,20 @@ export default function RequirementDetail({ reqId: reqIdProp }: { reqId?: string
     const navigate = useNavigate();
     const { openJd, activeReq: jdActiveReq } = useJdViewer();
     const [req, setReq] = useState<Requirement | null>(null);
+
+    const { data: myCompaniesData } = useQuery<{ companies: string[]; all_access: boolean }>({
+        queryKey: ["my-companies"],
+        queryFn: () => api.get("/clients/my-companies").then((r: any) => r || { companies: [], all_access: false }),
+        staleTime: 5 * 60 * 1000,
+        retry: false,
+    });
+    const isClientManager = Boolean(
+        myCompaniesData?.all_access ||
+        (myCompaniesData?.companies || []).some(
+            c => c.toLowerCase() === (req?.company_name || "").toLowerCase()
+        )
+    );
+    const effectiveAdmin = isAdmin || isClientManager;
     useDocumentTitle(req?.requirement_name || "Requirement");
     const [applications, setApplications] = useState<Application[]>([]);
     const [loading, setLoading] = useState(true);
@@ -595,16 +610,20 @@ export default function RequirementDetail({ reqId: reqIdProp }: { reqId?: string
         L2_SELECTED: "L2 Selected",
         HR_ROUND: "HR Round",
         SELECTED: "Selected",
+        HOLD: "On Hold",
+        JOINED: "Joined",
         REJECTED: "Rejected",
     };
 
     const getNextStatuses = (current: string) => {
         const map: Record<string, string[]> = {
-            SENT: ["L1_SELECTED", "L2_SELECTED", "HR_ROUND", "SELECTED", "REJECTED"],
-            L1_SELECTED: ["L2_SELECTED", "HR_ROUND", "SELECTED", "REJECTED"],
-            L2_SELECTED: ["HR_ROUND", "SELECTED", "REJECTED"],
-            HR_ROUND: ["SELECTED", "REJECTED"],
-            SELECTED: ["REJECTED"],
+            SENT: ["L1_SELECTED", "L2_SELECTED", "HR_ROUND", "SELECTED", "HOLD", "REJECTED"],
+            L1_SELECTED: ["L2_SELECTED", "HR_ROUND", "SELECTED", "HOLD", "REJECTED"],
+            L2_SELECTED: ["HR_ROUND", "SELECTED", "HOLD", "REJECTED"],
+            HR_ROUND: ["SELECTED", "HOLD", "REJECTED"],
+            SELECTED: ["JOINED", "HOLD", "REJECTED"],
+            HOLD: ["SENT", "L1_SELECTED", "L2_SELECTED", "HR_ROUND", "SELECTED", "REJECTED"],
+            JOINED: ["REJECTED"],
             REJECTED: ["SENT", "L1_SELECTED", "L2_SELECTED", "HR_ROUND", "SELECTED"],
         };
         return map[current] || [];
@@ -715,7 +734,7 @@ export default function RequirementDetail({ reqId: reqIdProp }: { reqId?: string
                     >
                         <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Icon name="document" size={16} /> View JD</span>
                     </button>
-                    {isAdmin && req?.status !== "DELETED" && (
+                    {effectiveAdmin && req?.status !== "DELETED" && (
                         <button
                             className="btn btn-outline"
                             onClick={openEditPanel}
@@ -735,7 +754,7 @@ export default function RequirementDetail({ reqId: reqIdProp }: { reqId?: string
                     >
                         LinkedIn Search
                     </button>
-                    {isAdmin && req?.status !== "DELETED" && (
+                    {effectiveAdmin && req?.status !== "DELETED" && (
                         <button
                             className="btn btn-outline"
                             onClick={() => {
@@ -746,7 +765,7 @@ export default function RequirementDetail({ reqId: reqIdProp }: { reqId?: string
                             <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Icon name="edit" size={16} /> Status</span>
                         </button>
                     )}
-                    {isAdmin && req?.status === "DELETED" && (
+                    {effectiveAdmin && req?.status === "DELETED" && (
                         <button
                             className="btn btn-outline"
                             onClick={() => {
@@ -757,7 +776,7 @@ export default function RequirementDetail({ reqId: reqIdProp }: { reqId?: string
                             <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Icon name="refresh" size={16} /> Restore</span>
                         </button>
                     )}
-                    {isAdmin && req?.status !== "DELETED" && (
+                    {effectiveAdmin && req?.status !== "DELETED" && (
                         <button
                             className="btn btn-ghost text-error"
                             style={{ color: "var(--error)" }}
@@ -766,7 +785,7 @@ export default function RequirementDetail({ reqId: reqIdProp }: { reqId?: string
                             <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Icon name="trash" size={16} /> Delete</span>
                         </button>
                     )}
-                    {isAdmin && req?.status !== "DELETED" && (
+                    {effectiveAdmin && req?.status !== "DELETED" && (
                         <button
                             className="btn btn-outline"
                             onClick={() => setShowAssignDrawer(true)}
@@ -783,7 +802,7 @@ export default function RequirementDetail({ reqId: reqIdProp }: { reqId?: string
                             )}
                         </button>
                     )}
-                    {!isAdmin && isRecruiter && req?.status !== "DELETED" && user && !(req?.assigned_recruiters || []).includes(user.id) && (
+                    {!effectiveAdmin && isRecruiter && req?.status !== "DELETED" && user && !(req?.assigned_recruiters || []).includes(user.id) && (
                         <button
                             className="btn btn-outline"
                             onClick={() => setShowRequestDialog(true)}
@@ -937,7 +956,7 @@ export default function RequirementDetail({ reqId: reqIdProp }: { reqId?: string
 
 
             {/* ── Submissions | Profiles pill (all roles) ── */}
-            {(isAdmin || isRecruiter) && (
+            {(effectiveAdmin || isRecruiter) && (
                 <div className="detail-section">
                     <div style={{ marginBottom: "1.25rem" }}>
                         <PillNav
@@ -968,11 +987,11 @@ export default function RequirementDetail({ reqId: reqIdProp }: { reqId?: string
                             <div className="data-table-wrap">
                                 <table className="data-table" style={{ tableLayout: "fixed", width: "100%" }}>
                                     <colgroup>
-                                        <col style={{ width: isAdmin ? "30%" : "36%" }} />
+                                        <col style={{ width: effectiveAdmin ? "30%" : "36%" }} />
                                         <col style={{ width: "15%" }} />
-                                        <col style={{ width: isAdmin ? "10%" : "11%" }} />
+                                        <col style={{ width: effectiveAdmin ? "10%" : "11%" }} />
                                         <col style={{ width: "24%" }} />
-                                        <col style={{ width: isAdmin ? "21%" : "14%" }} />
+                                        <col style={{ width: effectiveAdmin ? "21%" : "14%" }} />
                                     </colgroup>
                                     <thead>
                                         <tr>
@@ -1004,7 +1023,7 @@ export default function RequirementDetail({ reqId: reqIdProp }: { reqId?: string
                                                     <td style={{ fontSize: 13 }}>{app.ai_score != null ? <span className="font-mono">{app.ai_score}/100</span> : <span className="text-muted">—</span>}</td>
                                                     <td style={{ fontSize: 12, color: "var(--text-muted)", whiteSpace: "nowrap" }}>{new Date(app.sent_at).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}</td>
                                                     <td onClick={(e) => e.stopPropagation()}>
-                                                        {isAdmin && getNextStatuses(app.status).length > 0 && (
+                                                        {effectiveAdmin && getNextStatuses(app.status).length > 0 && (
                                                             <button
                                                                 className="btn btn-ghost btn-sm"
                                                                 onClick={() => { setSelectedApp(app); setNewStatus(""); setRejectionReason(""); setStatusNotes(""); setStatusError(""); }}
@@ -1096,7 +1115,7 @@ export default function RequirementDetail({ reqId: reqIdProp }: { reqId?: string
                                 onSubmit={handleSubmitProfile}
                                 onRemove={handleRemoveProfile}
                                 currentUserId={user?.id}
-                                isAdmin={isAdmin}
+                                isAdmin={effectiveAdmin}
                             />
                         </>
                     )}
@@ -1108,7 +1127,7 @@ export default function RequirementDetail({ reqId: reqIdProp }: { reqId?: string
                 <SubmissionDetailModal
                     app={selectedSub.app}
                     prof={selectedSub.prof}
-                    isAdmin={isAdmin}
+                    isAdmin={effectiveAdmin}
                     onClose={() => setSelectedSub(null)}
                 />
             )}

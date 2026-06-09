@@ -56,7 +56,7 @@ function App() {
           {/* Requirements */}
           <Route path="/requirements" element={<Navigate to="/dashboard" replace />} />
           <Route path="/requirements/new" element={<RequirementCreate />} />
-          <Route path="/requirements/:id" element={<RequirementDetail />} />
+          <Route path="/requirements/:id" element={<RequirementDetailRoute />} />
           <Route path="/requirements/:id/profiles/:candidateId" element={<ProfileFullView />} />
           <Route path="/assignment-requests" element={<AssignmentRequests />} />
           <Route path="/requirements/:reqId/submit" element={<SubmitCandidate />} />

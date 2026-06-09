@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { api } from "../services/api";
 import Icon from "../components/Icon";
 import "../styles/pages.css";
@@ -11,26 +12,36 @@ function ClientCombobox({ value, onChange }: { value: string; onChange: (v: stri
     const ref = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
+        // Deduplicate company names by slug, with high-priority names overwriting low-priority ones.
+        // This ensures "Cohere Health" (from requirements) beats "cohere health" (from API cache).
+        const dedupeBySlug = (lowPriority: string[], highPriority: string[] = []): string[] => {
+            const toSlug = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+            const slugToName = new Map<string, string>();
+            for (const n of lowPriority) slugToName.set(toSlug(n), n);
+            for (const n of highPriority) slugToName.set(toSlug(n), n);
+            return [...slugToName.values()].sort();
+        };
+
         api.get("/clients/my-companies")
             .then(({ companies, all_access }: { companies: string[]; all_access: boolean }) => {
                 if (all_access) {
-                    // Super admin: merge assigned list with all existing requirement companies
+                    // Super admin: merge assigned list with all existing requirement companies.
+                    // Requirements names take precedence (proper casing) over API cache names.
                     api.get("/requirements")
                         .then((reqs: any[]) => {
                             const reqNames = (reqs || []).map((r: any) => r.company_name).filter(Boolean) as string[];
-                            setClients([...new Set([...companies, ...reqNames])].sort());
+                            setClients(dedupeBySlug(companies, reqNames));
                         })
-                        .catch(() => setClients([...companies].sort()));
+                        .catch(() => setClients(dedupeBySlug(companies)));
                 } else {
-                    setClients([...companies].sort());
+                    setClients(dedupeBySlug(companies));
                 }
             })
             .catch(() => {
-                // Fallback: derive from existing requirements if endpoint unavailable
                 api.get("/requirements")
                     .then((reqs: any[]) => {
-                        const names = [...new Set((reqs || []).map((r: any) => r.company_name).filter(Boolean))].sort() as string[];
-                        setClients(names);
+                        const names = (reqs || []).map((r: any) => r.company_name).filter(Boolean) as string[];
+                        setClients(dedupeBySlug(names));
                     })
                     .catch(() => { });
             });
@@ -212,6 +223,7 @@ const SKILL_PREFERENCE_HEADER = "Skill Preferences:";
 export default function RequirementCreate() {
     useDocumentTitle("Create Requirement");
     const navigate = useNavigate();
+    const queryClient = useQueryClient();
     const [searchParams] = useSearchParams();
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
@@ -367,6 +379,8 @@ export default function RequirementCreate() {
                     payload.append("all_skills_json", JSON.stringify(parsedJd.all_skills));
                 }
                 const created = await api.post("/requirements/from-file", payload);
+                queryClient.invalidateQueries({ queryKey: ["requirements"] });
+                queryClient.invalidateQueries({ queryKey: ["my-companies"] });
                 navigate(`/requirements/${created.id}`);
             } else {
                 const payload = {
@@ -386,6 +400,8 @@ export default function RequirementCreate() {
                     budget_range: form.budget_range || null,
                 };
                 const created = await api.post("/requirements", payload);
+                queryClient.invalidateQueries({ queryKey: ["requirements"] });
+                queryClient.invalidateQueries({ queryKey: ["my-companies"] });
                 navigate(`/requirements/${created.id}`);
             }
         } catch (err: any) {

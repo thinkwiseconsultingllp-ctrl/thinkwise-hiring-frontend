@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import type { CSSProperties } from "react";
 
 // ── Global filter context shared across all tabs ──────────────────────────
-interface AppliedFilters { client: string; search: string; status: string; recruiterId: string; }
+interface AppliedFilters { client: string; search: string; status: string; recruiterId: string; dateFrom: string; dateTo: string; }
 interface FilterCtxShape {
     applied: AppliedFilters;
     recruiterOptions: { id: string; name: string }[];
@@ -13,7 +13,7 @@ interface FilterCtxShape {
     setCounts: (nodes: React.ReactNode) => void;
 }
 const FilterCtx = createContext<FilterCtxShape>({
-    applied: { client: "", search: "", status: "", recruiterId: "" },
+    applied: { client: "", search: "", status: "", recruiterId: "", dateFrom: "", dateTo: "" },
     recruiterOptions: [],
     setRecruiterOptions: () => { },
     setCounts: () => { },
@@ -348,7 +348,7 @@ function TrackerTab() {
     }, []);
 
     const filtered = rows.filter(r => {
-        const matchesClient = !client || r.company_name === client;
+        const matchesClient = !client || toSlug(r.company_name || "") === toSlug(client);
         const matchesSearch = !search
             || r.company_name?.toLowerCase().includes(search.toLowerCase())
             || r.requirement_name?.toLowerCase().includes(search.toLowerCase())
@@ -464,6 +464,76 @@ const APP_STATUSES = ["", "SENT", "L1_SELECTED", "L2_SELECTED", "HR_ROUND", "SEL
 function firstNameOnly(name?: string | null): string {
     if (!name) return "—";
     return name.split(" ")[0];
+}
+
+const COPY_COLS = [
+    { label: "S.No", get: (_: any, i: number) => String(i + 1) },
+    { label: "Date", get: (s: any) => fmtDate(s.sent_at) },
+    { label: "Job Role", get: (s: any) => s.requirement_name ?? "—" },
+    { label: "Candidate Name", get: (s: any) => s.candidate_name ?? "—" },
+    { label: "Contact No.", get: (s: any) => s.candidate_phone ?? "—" },
+    { label: "Email ID", get: (s: any) => s.candidate_email ?? "—" },
+    { label: "Total Exp", get: (s: any) => s.total_experience ?? "—" },
+    { label: "Rel Exp", get: (s: any) => s.relevant_experience ?? "—" },
+    { label: "NP (days)", get: (s: any) => s.notice_period ?? "—" },
+    { label: "Current CTC", get: (s: any) => s.current_ctc != null ? `${s.current_ctc} LPA` : "—" },
+    { label: "Expected CTC", get: (s: any) => s.expected_ctc != null ? `${s.expected_ctc} LPA` : "—" },
+    { label: "Current Company", get: (s: any) => s.current_company ?? "—" },
+    { label: "Location", get: (s: any) => s.location ?? "—" },
+    { label: "Recruiter", get: (s: any) => s.recruiter_name ?? "—" },
+    { label: "Status", get: (s: any) => s.status ?? "—" },
+];
+
+function buildCopyHtml(rows: any[], startIdx = 0, includeHeader = true): string {
+    const thStyle = "border:1px solid #9ca3af;background:#bfdbfe;padding:6px 10px;font-size:12px;font-weight:700;white-space:nowrap;text-align:left;";
+    const tdStyle = "border:1px solid #d1d5db;padding:5px 10px;font-size:12px;white-space:nowrap;";
+    const trAlt = "background:#eff6ff;";
+
+    const thead = includeHeader
+        ? `<thead><tr>${COPY_COLS.map(c => `<th style="${thStyle}">${c.label}</th>`).join("")}</tr></thead>`
+        : "";
+    const bodyRows = rows.map((s, i) => {
+        const cells = COPY_COLS.map(c => `<td style="${tdStyle}">${c.get(s, startIdx + i)}</td>`).join("");
+        return `<tr${i % 2 === 1 ? ` style="${trAlt}"` : ""}>${cells}</tr>`;
+    }).join("");
+
+    return `<table style="border-collapse:collapse;font-family:Calibri,Arial,sans-serif;">${thead}<tbody>${bodyRows}</tbody></table>`;
+}
+
+function buildCopyText(rows: any[], startIdx = 0, includeHeader = true): string {
+    const body = rows.map((s, i) => COPY_COLS.map(c => c.get(s, startIdx + i)).join("\t")).join("\n");
+    if (!includeHeader) return body;
+    return `${COPY_COLS.map(c => c.label).join("\t")}\n${body}`;
+}
+
+async function copySubmissionsTable(rows: any[], setCopied: (v: boolean) => void) {
+    if (!rows.length) return;
+    const html = buildCopyHtml(rows, 0);
+    const text = buildCopyText(rows, 0);
+    try {
+        if (typeof ClipboardItem !== "undefined") {
+            await navigator.clipboard.write([
+                new ClipboardItem({
+                    "text/html": new Blob([html], { type: "text/html" }),
+                    "text/plain": new Blob([text], { type: "text/plain" }),
+                }),
+            ]);
+        } else {
+            await navigator.clipboard.writeText(text);
+        }
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2500);
+    } catch {
+        // fallback: select a hidden textarea
+        const el = document.createElement("textarea");
+        el.value = text;
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand("copy");
+        document.body.removeChild(el);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2500);
+    }
 }
 
 const CELL: CSSProperties = {
@@ -620,10 +690,18 @@ function SubmissionDrawer({ sub, isAdmin, onClose, onShortlist }: { sub: any; is
                 <div style={{ flex: 1, overflowY: "auto", padding: "1.1rem 1.2rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
                     {/* Recruiter-submitted details */}
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem 1.5rem" }}>
+                        <Field label="Phone" value={sub.candidate_phone
+                            ? <a href={`tel:${sub.candidate_phone}`} style={{ color: "var(--accent)", textDecoration: "none", fontFamily: "monospace" }}>{sub.candidate_phone}</a>
+                            : undefined} />
+                        <Field label="Email" value={sub.candidate_email
+                            ? <a href={`mailto:${sub.candidate_email}`} style={{ color: "var(--accent)", textDecoration: "none", fontSize: 12 }}>{sub.candidate_email}</a>
+                            : undefined} />
                         <Field label="Current Role" value={sub.current_role} />
                         <Field label="Current Company" value={sub.current_company} />
                         <Field label="Total Experience" value={sub.total_experience} />
+                        <Field label="Relevant Experience" value={sub.relevant_experience} />
                         <Field label="Notice Period" value={sub.notice_period ? <span style={{ color: noticePeriodColor(sub.notice_period), fontWeight: 600 }}>{sub.notice_period}</span> : undefined} />
+                        <Field label="Location" value={sub.location} />
                         <Field label="Current CTC" value={sub.current_ctc != null ? `${sub.current_ctc} LPA` : undefined} />
                         <Field label="Expected CTC" value={sub.expected_ctc != null ? `${sub.expected_ctc} LPA` : undefined} />
                     </div>
@@ -680,14 +758,6 @@ function SubmissionDrawer({ sub, isAdmin, onClose, onShortlist }: { sub: any; is
                                     );
                                 })}
                             </div>
-                        </div>
-                    )}
-
-                    {/* Relevant Experience */}
-                    {sub.relevant_experience && (
-                        <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "0.85rem" }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 4 }}>Relevant Experience</div>
-                            <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.55 }}>{sub.relevant_experience}</div>
                         </div>
                     )}
 
@@ -759,14 +829,24 @@ function SubmissionsTab({ isAdmin }: { isAdmin: boolean }) {
     const [error, setError] = useState<string | null>(null);
     const [hasMore, setHasMore] = useState(false);
     const [selected, setSelected] = useState<any>(null);
+    const [copied, setCopied] = useState(false);
+    const [rowCopied, setRowCopied] = useState<string | null>(null);
 
-    const load = (filters: AppliedFilters, skip: number, append: boolean) => {
+    // Local date filter state — only applies to this tab
+    const [dateFrom, setDateFrom] = useState(applied.dateFrom || "");
+    const [dateTo, setDateTo] = useState(applied.dateTo || "");
+
+    const todayStr = () => new Date().toISOString().slice(0, 10);
+
+    const load = (filters: AppliedFilters, skip: number, append: boolean, df = dateFrom, dt = dateTo) => {
         setLoading(true);
         setError(null);
         analyticsApi.getSubmissions({
             client: filters.client,
             status: filters.status,
             recruiter_id: filters.recruiterId,
+            date_from: df || undefined,
+            date_to: dt || undefined,
             skip,
             limit: 50,
         })
@@ -790,7 +870,7 @@ function SubmissionsTab({ isAdmin }: { isAdmin: boolean }) {
     useEffect(() => {
         setSubs([]);
         load(applied, 0, false);
-    }, [applied.client, applied.search, applied.status, applied.recruiterId]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [applied.client, applied.search, applied.status, applied.recruiterId, dateFrom, dateTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const displayed = applied.search
         ? subs.filter(s =>
@@ -810,7 +890,24 @@ function SubmissionsTab({ isAdmin }: { isAdmin: boolean }) {
     }, [displayed.length, setCounts]);
 
     const loadMore = () => load(applied, subs.length, true);
-    const colCount = 11; // Date Client Recruiter Role Candidate Exp CTC ExpCTC Notice Status Shortlisted
+    const colCount = 12; // +1 for the per-row copy button column
+
+    const copyRow = async (s: any, idx: number) => {
+        const html = buildCopyHtml([s], idx, false);
+        const text = buildCopyText([s], idx, false);
+        try {
+            if (typeof ClipboardItem !== "undefined") {
+                await navigator.clipboard.write([new ClipboardItem({
+                    "text/html": new Blob([html], { type: "text/html" }),
+                    "text/plain": new Blob([text], { type: "text/plain" }),
+                })]);
+            } else {
+                await navigator.clipboard.writeText(text);
+            }
+            setRowCopied(s.application_id);
+            setTimeout(() => setRowCopied(null), 2000);
+        } catch { /* ignore */ }
+    };
 
     // Set shortlisted to Yes / No, or clear to null (optimistic, reverts on failure).
     const setShortlistValue = async (appId: string, val: boolean | null) => {
@@ -834,21 +931,48 @@ function SubmissionsTab({ isAdmin }: { isAdmin: boolean }) {
 
             {error && <ErrMsg msg={error} />}
 
+            {/* Date filter + bulk copy */}
+            <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap", marginBottom: "0.65rem" }}>
+                <span style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>Date:</span>
+                <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                    style={{ fontSize: 12, padding: "4px 8px", border: "1px solid var(--border-subtle)", borderRadius: 6, background: "var(--bg-input)", color: "var(--text-primary)", height: 30 }} />
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>–</span>
+                <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                    style={{ fontSize: 12, padding: "4px 8px", border: "1px solid var(--border-subtle)", borderRadius: 6, background: "var(--bg-input)", color: "var(--text-primary)", height: 30 }} />
+                <button className="btn btn-outline btn-sm" style={{ fontSize: 11, height: 30, padding: "0 10px" }}
+                    onClick={() => { const t = todayStr(); setDateFrom(t); setDateTo(t); }}
+                    title="Show only today's submissions">Today</button>
+                {(dateFrom || dateTo) && (
+                    <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, height: 30, padding: "0 8px", color: "var(--text-muted)" }}
+                        onClick={() => { setDateFrom(""); setDateTo(""); }}>✕ Clear</button>
+                )}
+                <div style={{ flex: 1 }} />
+                {displayed.length > 0 && (
+                    <button className="btn btn-outline btn-sm"
+                        onClick={() => copySubmissionsTable(displayed, setCopied)}
+                        title="Copy all visible rows as a formatted table — paste directly into Gmail or Outlook"
+                        style={{ fontSize: 12, gap: 6, display: "flex", alignItems: "center", height: 30 }}>
+                        {copied ? <>✓ Copied!</> : <>⧉ Copy All ({displayed.length})</>}
+                    </button>
+                )}
+            </div>
+
             <div className="data-table-wrap">
                 <div style={{ overflowX: "auto" }}>
-                    <table className="data-table" style={{ tableLayout: "fixed", minWidth: 860, width: "100%" }}>
+                    <table className="data-table" style={{ tableLayout: "fixed", minWidth: 900, width: "100%" }}>
                         <colgroup>
                             <col style={{ width: "82px" }} />
-                            <col style={{ width: "100px" }} />
+                            <col style={{ width: "96px" }} />
+                            <col style={{ width: "72px" }} />
+                            <col style={{ width: "116px" }} />
+                            <col style={{ width: "116px" }} />
+                            <col style={{ width: "56px" }} />
+                            <col style={{ width: "60px" }} />
+                            <col style={{ width: "60px" }} />
                             <col style={{ width: "76px" }} />
-                            <col style={{ width: "120px" }} />
-                            <col style={{ width: "120px" }} />
-                            <col style={{ width: "58px" }} />
-                            <col style={{ width: "64px" }} />
-                            <col style={{ width: "64px" }} />
-                            <col style={{ width: "80px" }} />
-                            <col style={{ width: "80px" }} />
                             <col style={{ width: "76px" }} />
+                            <col style={{ width: "72px" }} />
+                            <col style={{ width: "36px" }} />
                         </colgroup>
                         <thead>
                             <tr>
@@ -863,6 +987,7 @@ function SubmissionsTab({ isAdmin }: { isAdmin: boolean }) {
                                 <th style={{ fontSize: 12 }}>Notice</th>
                                 <th style={{ fontSize: 12 }} title="Client shortlisted for interview">Shortlisted</th>
                                 <th style={{ fontSize: 12 }}>Status</th>
+                                <th></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -889,7 +1014,6 @@ function SubmissionsTab({ isAdmin }: { isAdmin: boolean }) {
                                             <td style={{ ...CELL, fontSize: 12 }} title={String(s.expected_ctc ?? "")}>{dash(s.expected_ctc)}</td>
                                             <td style={{ ...CELL, fontSize: 12, color: noticePeriodColor(s.notice_period), fontWeight: 600 }} title={s.notice_period}>{dash(s.notice_period)}</td>
                                             <td onClick={e => e.stopPropagation()} style={{ textAlign: "center" }}>
-                                                {/* Editable only by admin while at SENT; locked/derived afterward. */}
                                                 <ShortlistCell
                                                     value={s.client_shortlisted ?? null}
                                                     editable={isAdmin && s.status === "SENT"}
@@ -897,6 +1021,13 @@ function SubmissionsTab({ isAdmin }: { isAdmin: boolean }) {
                                                 />
                                             </td>
                                             <td><StatusBadge status={s.status} /></td>
+                                            <td onClick={e => e.stopPropagation()} style={{ textAlign: "center", padding: "0 4px" }}>
+                                                <button
+                                                    title="Copy this row as a table (paste into Gmail / Outlook)"
+                                                    onClick={() => copyRow(s, displayed.indexOf(s))}
+                                                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: rowCopied === s.application_id ? "#16a34a" : "var(--text-muted)", padding: 2, lineHeight: 1 }}
+                                                >{rowCopied === s.application_id ? "✓" : "⧉"}</button>
+                                            </td>
                                         </tr>
                                     ))
                             }
@@ -1321,7 +1452,7 @@ function InterviewsTab({ isAdmin }: { isAdmin: boolean }) {
         return <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: s[1], color: s[2], border: `1px solid ${s[2]}30` }}>{s[0]}</span>;
     };
 
-    const COLS = 10; // added Warning column and phone number
+    const COLS = 10; // added Warning column + Phone column
     return (
         <>
             {selectionDrawer && (
@@ -1704,7 +1835,7 @@ export default function Analytics() {
         if (t !== activeTab) setActiveTab(t);
     }, [tabParam]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const emptyFilters: AppliedFilters = { client: "", search: "", status: "", recruiterId: "" };
+    const emptyFilters: AppliedFilters = { client: "", search: "", status: "", recruiterId: "", dateFrom: "", dateTo: "" };
 
     // Filters live in URL query params so they survive refresh and share via URL.
     // useMemo prevents a new object reference on every render (which would cause
@@ -1714,6 +1845,8 @@ export default function Analytics() {
         search: searchParams.get("search") || "",
         status: searchParams.get("status") || "",
         recruiterId: searchParams.get("recruiterId") || "",
+        dateFrom: "",
+        dateTo: "",
     }), [searchParams.get("client"), searchParams.get("search"), searchParams.get("status"), searchParams.get("recruiterId")]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Draft = local state of filter bar before Apply is clicked.
@@ -1726,6 +1859,8 @@ export default function Analytics() {
             search: searchParams.get("search") || "",
             status: searchParams.get("status") || "",
             recruiterId: searchParams.get("recruiterId") || "",
+            dateFrom: "",
+            dateTo: "",
         });
     }, [searchParams.toString()]); // eslint-disable-line react-hooks/exhaustive-deps
 
