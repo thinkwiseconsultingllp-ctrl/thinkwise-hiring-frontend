@@ -887,6 +887,7 @@ function ReviewPanel({ profile, jdId }: { profile: Profile; jdId: string }) {
 export default function ProfileDrawer({ jdId, profile, action, initialTab, onUpdated }: ProfileDrawerProps) {
     const drawer = useSideDrawer();
     const navigate = useNavigate();
+    const { user, isAdmin } = useAuth();
     const [tab, setTab] = useState<ProfileViewTab>(initialTab || "overview");
 
     useEffect(() => {
@@ -1018,7 +1019,7 @@ export default function ProfileDrawer({ jdId, profile, action, initialTab, onUpd
                         <UpdateForm profile={profile} jdId={jdId} refreshProfile={refreshProfile} />
                     )}
                     {action === "submit" && (
-                        profile.sourced_by?.source === "manual" ? (
+                        profile.sourced_by?.source === "manual" && !isAdmin && String(profile.recruiter_uuid) !== String(user?.id) ? (
                             <div style={{ padding: "2.5rem 1.5rem", textAlign: "center" }}>
                                 <div style={{ fontSize: 36, marginBottom: "0.75rem" }}>🔒</div>
                                 <div style={{ fontWeight: 600, fontSize: 15, marginBottom: "0.5rem" }}>Cannot Submit</div>
