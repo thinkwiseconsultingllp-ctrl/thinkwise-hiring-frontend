@@ -5,6 +5,7 @@ import { API_BASE, api, getToken } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import Icon from "../components/Icon";
 import "../styles/pages.css";
+import { fmtDate, fmtTs } from "../utils/dateUtils";
 
 type CommentEntry = {
   id: string;
@@ -395,7 +396,7 @@ export default function CandidateDetail() {
                       <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                         {h.in_pool && !h.submitted && <span>In pool</span>}
                         {h.recruiter_name && <span>· {h.recruiter_name}</span>}
-                        {h.sent_at && <span>· {new Date(h.sent_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>}
+                        {h.sent_at && <span>· {fmtDate(h.sent_at)}</span>}
                       </div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
@@ -523,7 +524,7 @@ export default function CandidateDetail() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.3rem", gap: "0.5rem", flexWrap: "wrap" }}>
                   <span style={{ fontWeight: 600, fontSize: "0.875rem", color: "var(--text-primary)" }}>{c.author_name || "Unknown"}</span>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                    <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>{new Date(c.created_at).toLocaleString()}</span>
+                    <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>{fmtTs(c.created_at)}</span>
                     {editingCommentId !== c.id && (
                       <button
                         className="btn btn-ghost btn-sm"

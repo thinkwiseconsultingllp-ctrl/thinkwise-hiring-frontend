@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../services/api";
 import { useSideDrawer, type ProfileAction, type ProfileViewTab } from "../context/SideDrawerContext";
 import { useAuth } from "../context/AuthContext";
+import { fmtTs, fmtDate } from "../utils/dateUtils";
 
 type Profile = any;
 
@@ -23,17 +24,6 @@ function colorForLevel(level?: string): string {
     return "#6b7280";
 }
 
-function fmtDate(value?: string | Date | null): string {
-    if (!value) return "";
-    try {
-        return new Date(value).toLocaleString("en-IN", {
-            day: "2-digit", month: "short", year: "numeric",
-            hour: "2-digit", minute: "2-digit", hour12: true,
-        });
-    } catch {
-        return String(value);
-    }
-}
 
 function npColor(notice?: string | null): string {
     if (!notice) return "var(--text-secondary)";
@@ -512,7 +502,7 @@ function CommentsSection({ profile, jdId, onUpdated }: { profile: Profile; jdId:
                                             </div>
                                             {h.sent_at && (
                                                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                                                    {new Date(h.sent_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                                                    {fmtDate(h.sent_at)}
                                                     {h.recruiter_name && <> · {h.recruiter_name}</>}
                                                 </div>
                                             )}

@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import Icon from "../components/Icon";
+import { fmtTs } from "../utils/dateUtils";
 
 interface AssignmentRequest {
     id: string;
@@ -19,11 +20,6 @@ interface AssignmentRequest {
     created_at: string;
 }
 
-function fmtDate(value?: string | null): string {
-    if (!value) return "";
-    try { return new Date(value).toLocaleString(); }
-    catch { return String(value); }
-}
 
 export default function AssignmentRequests() {
     useDocumentTitle("Assignment Requests");
@@ -177,7 +173,7 @@ export default function AssignmentRequests() {
                                         }}>{r.status}</span>
                                     </td>
                                     <td className="text-sm text-muted">
-                                        {fmtDate(r.created_at)}
+                                        {fmtTs(r.created_at)}
                                     </td>
                                     <td>
                                         {isAdmin && isPending && (

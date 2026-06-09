@@ -9,6 +9,7 @@ import Icon from "../components/Icon";
 import { useQuery } from "@tanstack/react-query";
 import RequirementDetail from "./RequirementDetail";
 import "../styles/pages.css";
+import { fmtDate, fmtTs } from "../utils/dateUtils";
 
 interface Notification {
     id: string;
@@ -65,7 +66,7 @@ function NotificationsFeed({ navigate }: { navigate: (path: string) => void }) {
                 {notifs.slice(0, 15).map((n, idx) => {
                     const isLast = idx === Math.min(notifs.length, 15) - 1;
                     const dot = NOTIF_KIND_ICON[n.kind] || "🔔";
-                    const timeStr = n.occurred_at ? new Date(n.occurred_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+                    const timeStr = n.occurred_at ? fmtTs(n.occurred_at) : "";
                     const statusColor = n.kind === "application" && n.status ? (APP_STATUS_COLOR[n.status] || "var(--text-secondary)") : undefined;
 
                     const handleClick = () => {
@@ -958,7 +959,7 @@ export default function Dashboard() {
                                         <td>{req.client_spoc_name || "-"}</td>
                                         <td>{renderSla(req)}</td>
                                         <td><StatusBadge status={req.status} /></td>
-                                        <td className="text-muted text-sm">{new Date(req.created_at).toLocaleDateString()}</td>
+                                        <td className="text-muted text-sm">{fmtDate(req.created_at)}</td>
                                         <td onClick={e => e.stopPropagation()} style={{ display: "flex", gap: 4, alignItems: "center" }}>
                                             <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/dashboard/${toSlug(req.company_name || "")}/${toSlug(req.requirement_name || "")}`)}>View</button>
                                             <a href={`/requirements/${req.id}`} target="_blank" rel="noreferrer" title="Open in new tab"

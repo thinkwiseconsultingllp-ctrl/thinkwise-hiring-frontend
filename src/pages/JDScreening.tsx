@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { api } from "../services/api";
 import "../styles/pages.css";
+import { fmtDate } from "../utils/dateUtils";
 
 type EducationRequired = {
   degrees?: string[];
@@ -116,12 +117,12 @@ function SkillSelector({ jd, onUpdated }: { jd: JD; onUpdated: (updated: JD) => 
             const baseStyle: React.CSSProperties = { cursor: "pointer", userSelect: "none" };
             const cls =
               tag === "must" ? "suggestion-chip is-active"
-              : tag === "good" ? "suggestion-chip"
-              : "suggestion-chip";
+                : tag === "good" ? "suggestion-chip"
+                  : "suggestion-chip";
             const extraStyle: React.CSSProperties =
               tag === "must" ? { borderColor: "var(--success)", color: "var(--success)" }
-              : tag === "good" ? { borderColor: "var(--warning, #f59e0b)", color: "var(--warning, #f59e0b)" }
-              : { opacity: 0.7 };
+                : tag === "good" ? { borderColor: "var(--warning, #f59e0b)", color: "var(--warning, #f59e0b)" }
+                  : { opacity: 0.7 };
             const prefix = tag === "must" ? "★ " : tag === "good" ? "○ " : "";
             return (
               <span
@@ -403,7 +404,7 @@ export default function JDScreening() {
                   <tr key={jd._id}>
                     <td style={{ verticalAlign: "top" }}>
                       <div style={{ fontWeight: 600, marginBottom: "0.35rem" }}>{jd.job_role}</div>
-                      <div className="text-secondary text-xs">{new Date(jd.created_at).toLocaleDateString()}</div>
+                      <div className="text-secondary text-xs">{fmtDate(jd.created_at)}</div>
                     </td>
                     <td className="text-sm" style={{ verticalAlign: "top" }}>
                       {jd.experience.overall_years || "Not Mentioned"}

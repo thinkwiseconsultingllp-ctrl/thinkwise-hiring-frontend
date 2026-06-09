@@ -6,6 +6,7 @@ import { useAuth } from "../context/AuthContext";
 import Icon from "../components/Icon";
 import { parseBooleanQuery, matchesQuery } from "../utils/booleanSearch";
 import "../styles/pages.css";
+import { toUtcDate, fmtDate, fmtTs } from "../utils/dateUtils";
 
 type Requirement = { id: string; req_id: string; requirement_name: string; assigned_recruiters?: string[] };
 
@@ -235,15 +236,6 @@ export default function TalentPool() {
     });
   };
 
-  const fmtTs = (value?: string | null) => {
-    if (!value) return "—";
-    try {
-      return new Date(value).toLocaleString("en-IN", {
-        day: "2-digit", month: "short", year: "numeric",
-        hour: "2-digit", minute: "2-digit", hour12: true,
-      });
-    } catch { return value; }
-  };
 
   const openCommentsModal = async (candidate: Candidate) => {
     setCommentsCandidate(candidate);
@@ -616,7 +608,7 @@ export default function TalentPool() {
                       {(() => {
                         const dateStr = candidate.resume_updated_at || candidate.created_at;
                         if (!dateStr) return null;
-                        const uploaded = new Date(dateStr);
+                        const uploaded = toUtcDate(dateStr);
                         const diffDays = Math.floor((Date.now() - uploaded.getTime()) / 86400000);
                         const diffMonths = diffDays / 30;
                         const isOld = diffMonths >= 2;
@@ -625,7 +617,7 @@ export default function TalentPool() {
                             : `${Math.floor(diffMonths)}mo ago`;
                         return (
                           <div style={{ fontSize: 10, marginTop: 2, color: isOld ? "#b45309" : "var(--text-muted)", display: "flex", alignItems: "center", gap: 3 }}
-                            title={uploaded.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}>
+                            title={fmtDate(dateStr)}>
                             {isOld && <span>⚠</span>}
                             <span>{label}</span>
                             {isOld && <span style={{ opacity: 0.8 }}>· may be outdated</span>}

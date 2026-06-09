@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, API_BASE, getToken } from "../services/api";
+import { fmtTs } from "../utils/dateUtils";
 
 type Profile = any;
 
@@ -14,15 +15,6 @@ function colorForLevel(level?: string): string {
     return "#6b7280";
 }
 
-function fmtDate(value?: string | Date | null): string {
-    if (!value) return "";
-    try {
-        return new Date(value).toLocaleString("en-IN", {
-            day: "2-digit", month: "short", year: "numeric",
-            hour: "2-digit", minute: "2-digit", hour12: true,
-        });
-    } catch { return String(value); }
-}
 
 const STATUS_LABEL: Record<string, string> = {
     SENT: "Submitted", L1_SELECTED: "L1 Selected", L2_SELECTED: "L2 Selected",
@@ -264,7 +256,7 @@ function OverviewBlock({ profile }: { profile: Profile }) {
                                 <span style={{ color: appStatus === "REJECTED" ? "#dc2626" : appStatus === "SENT" ? "#16a34a" : "#2563eb", fontWeight: 500 }}>
                                     {appStatus ? (STATUS_LABEL[appStatus] ?? appStatus) : "Submitted"}
                                 </span>
-                                <span style={{ color: "var(--text-secondary)" }}>· {fmtDate(sentAt)}</span>
+                                <span style={{ color: "var(--text-secondary)" }}>· {fmtTs(sentAt)}</span>
                             </div>
                         )}
                         {pastSubs.map((ps: any, i: number) => (
@@ -275,7 +267,7 @@ function OverviewBlock({ profile }: { profile: Profile }) {
                                 <span style={{ color: "var(--text-secondary)" }}>·</span>
                                 <span style={{ color: ps.status === "REJECTED" ? "#dc2626" : "#2563eb", fontWeight: 500 }}>{STATUS_LABEL[ps.status] ?? ps.status}</span>
                                 {ps.rejection_reason && <span style={{ color: "var(--text-secondary)", fontStyle: "italic" }}>· "{ps.rejection_reason.slice(0, 40)}{ps.rejection_reason.length > 40 ? "…" : ""}"</span>}
-                                {ps.sent_at && <span style={{ color: "var(--text-secondary)", marginLeft: "auto" }}>{fmtDate(ps.sent_at)}</span>}
+                                {ps.sent_at && <span style={{ color: "var(--text-secondary)", marginLeft: "auto" }}>{fmtTs(ps.sent_at)}</span>}
                             </div>
                         ))}
                     </div>
@@ -288,7 +280,7 @@ function OverviewBlock({ profile }: { profile: Profile }) {
                     {recent.map((c: any, i: number) => (
                         <div key={i} style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: "0.4rem", borderLeft: "3px solid var(--border-subtle)", paddingLeft: "0.6rem" }}>
                             <div style={{ color: "var(--text-primary)" }}>"{c.comment}"</div>
-                            <div style={{ fontSize: 11 }}>— {c.author_name || "unknown"} · {fmtDate(c.date)} {c.requirement_name && `· for ${c.requirement_name}`}</div>
+                            <div style={{ fontSize: 11 }}>— {c.author_name || "unknown"} · {fmtTs(c.date)} {c.requirement_name && `· for ${c.requirement_name}`}</div>
                         </div>
                     ))}
                 </div>
@@ -433,7 +425,7 @@ function CommentsBlock({ profile, jdId, onUpdated }: { profile: Profile; jdId: s
                 {[...comments].reverse().map((c: any, i: number) => (
                     <div key={i} style={{ fontSize: 13, borderLeft: "3px solid var(--border-subtle)", paddingLeft: "0.6rem" }}>
                         <div>{c.comment}</div>
-                        <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>— {c.author_name || "unknown"} · {fmtDate(c.date)}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>— {c.author_name || "unknown"} · {fmtTs(c.date)}</div>
                     </div>
                 ))}
             </div>

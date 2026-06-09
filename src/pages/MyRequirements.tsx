@@ -6,6 +6,7 @@ import { api } from "../services/api";
 import StatusBadge from "../components/StatusBadge";
 import { useQuery } from "@tanstack/react-query";
 import "../styles/pages.css";
+import { fmtDate } from "../utils/dateUtils";
 
 interface Requirement {
     id: string;
@@ -171,7 +172,7 @@ export default function MyRequirements() {
                                             )}
                                         </td>
                                         <td><StatusBadge status={req.status} /></td>
-                                        <td className="text-muted text-sm">{new Date(req.created_at).toLocaleDateString()}</td>
+                                        <td className="text-muted text-sm">{fmtDate(req.created_at)}</td>
                                         <td onClick={e => e.stopPropagation()} style={{ display: "flex", gap: 4, alignItems: "center" }}>
                                             <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/requirements/${req.id}`)}>View</button>
                                             <a href={`/requirements/${req.id}`} target="_blank" rel="noreferrer" title="Open in new tab"

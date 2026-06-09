@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, createContext, useContext } from "react";
+import { toUtcDate, fmtDate } from "../utils/dateUtils";
 import { useQuery } from "@tanstack/react-query";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { createPortal } from "react-dom";
@@ -40,11 +41,6 @@ const SLA_LABEL: Record<string, string> = {
 const FUNNEL_COLORS = ["#3b82f6", "#8b5cf6", "#16a34a", "#0891b2"];
 
 
-function fmtDate(v?: string | null) {
-    if (!v) return "—";
-    try { return new Date(v).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }); }
-    catch { return v as string; }
-}
 
 function dash(v: any) { return v == null || v === "" ? "—" : v; }
 
@@ -1182,7 +1178,7 @@ function RoundCell({ appId, round, data, onSave, readOnly, onPassedFinal }: {
         if (savedOutcome === "rejected")
             return <span style={{ ...base, background: "#fee2e2", color: "#dc2626", border: "1px solid #fca5a5" }}>Rejected</span>;
         if (savedStatus === "scheduled" || savedStatus === "rescheduled") {
-            const d = savedDate ? new Date(savedDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) : "";
+            const d = savedDate ? toUtcDate(savedDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", timeZone: "Asia/Kolkata" }) : "";
             return <span style={{ ...base, background: "#fef9c3", color: "#a16207", border: "1px solid #fde68a" }}>
                 {savedStatus === "rescheduled" ? "Rescheduled" : "Scheduled"}{d ? ` · ${d}` : ""}{savedTime ? ` ${savedTime}` : ""}
             </span>;

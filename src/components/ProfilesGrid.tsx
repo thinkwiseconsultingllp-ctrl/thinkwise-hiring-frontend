@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSideDrawer } from "../context/SideDrawerContext";
+import { fmtTs, fmtDate } from "../utils/dateUtils";
 
 type Profile = any;
 
@@ -13,6 +14,7 @@ interface ProfilesGridProps {
     onRemove?: (profile: Profile) => void;
     currentUserId?: string;
     isAdmin?: boolean;
+    defaultSortKey?: SortKey;
 }
 
 function scoreColor(score: number): string {
@@ -22,15 +24,6 @@ function scoreColor(score: number): string {
     return "#dc2626";
 }
 
-function fmtTs(value?: string | Date | null): string {
-    if (!value) return "";
-    try {
-        return new Date(value).toLocaleString("en-IN", {
-            day: "2-digit", month: "short", year: "numeric",
-            hour: "2-digit", minute: "2-digit", hour12: true,
-        });
-    } catch { return String(value); }
-}
 
 const STATUS_LABEL: Record<string, string> = {
     SENT: "Submitted", L1_SELECTED: "L1 Selected", L2_SELECTED: "L2 Selected",
@@ -43,7 +36,7 @@ function ownershipExpiry(profile: Profile): string | null {
     const exp = profile.ownership_expires_at;
     if (!exp) return null;
     try {
-        return new Date(exp).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+        return fmtDate(exp);
     } catch { return null; }
 }
 
@@ -75,7 +68,7 @@ function smartTier(p: Profile, jobRole?: string): number {
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
-type SortKey = "smart" | "score" | "ai_score" | "exp";
+type SortKey = "recent" | "smart" | "score" | "ai_score" | "exp";
 type SortDir = "asc" | "desc";
 
 const PAGE_SIZE = 5;
@@ -85,17 +78,30 @@ function firstName(name?: string | null): string {
     return name.split(" ")[0];
 }
 
-export default function ProfilesGrid({ profiles, jdId, jobRole, onRemove, currentUserId, isAdmin }: ProfilesGridProps) {
+export default function ProfilesGrid({ profiles, jdId, jobRole, onRemove, currentUserId, isAdmin, defaultSortKey }: ProfilesGridProps) {
     const drawer = useSideDrawer();
-    const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "smart", dir: "desc" });
+    const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: defaultSortKey ?? "recent", dir: "desc" });
     const [page, setPage] = useState(1);
     const [search, setSearch] = useState("");
+
+    const prevDefaultRef = useRef(defaultSortKey);
+    useEffect(() => {
+        if (defaultSortKey && defaultSortKey !== prevDefaultRef.current) {
+            prevDefaultRef.current = defaultSortKey;
+            setSort({ key: defaultSortKey, dir: "desc" });
+            setPage(1);
+        }
+    }, [defaultSortKey]);
 
     const detScore = (p: Profile) => p.deterministic_scoring_analysis?.display_score ?? 0;
     const aiScore = (p: Profile): number => p.llm_analysis?.overall_score ?? 0;
     const expYearsVal = (p: Profile): number => p.deterministic_scoring_analysis?.total_experience_years ?? 0;
+    const tsVal = (p: Profile): number => p.created_at ? new Date(p.created_at).getTime() : 0;
 
     const sorted = [...profiles].sort((a, b) => {
+        if (sort.key === "recent") {
+            return sort.dir === "desc" ? tsVal(b) - tsVal(a) : tsVal(a) - tsVal(b);
+        }
         if (sort.key === "smart") {
             const ta = smartTier(a, jobRole), tb = smartTier(b, jobRole);
             if (ta !== tb) return ta - tb;               // tier ascending (0 = best)
@@ -400,24 +406,31 @@ export default function ProfilesGrid({ profiles, jdId, jobRole, onRemove, curren
                                     {expLabel ?? (expYrs != null ? `${expYrs} yr` : "—")}
                                 </td>
                                 <td style={{ fontSize: 12, overflow: "hidden", maxWidth: 0 }}>
-                                    <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                        <span style={{ fontWeight: 500 }}>{p.uploaded_by_name || "—"}</span>
-                                        {(() => {
-                                            const src = p?.sourced_by?.source;
-                                            const label = src === "email" ? "Email" : src === "manual" ? "Manual" : "Pool";
-                                            const style: React.CSSProperties = src === "email"
-                                                ? { background: "#dbeafe", color: "#1d4ed8", border: "1px solid #bfdbfe" }
-                                                : src === "manual"
-                                                    ? { background: "#dcfce7", color: "#166534", border: "1px solid #bbf7d0" }
-                                                    : { background: "var(--bg-secondary)", color: "var(--text-muted)", border: "1px solid var(--border-subtle)" };
-                                            return (
-                                                <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 5px", borderRadius: 3, marginLeft: 5, flexShrink: 0, ...style }}>
-                                                    {label}
-                                                </span>
-                                            );
-                                        })()}
-                                        {ownershipExpiry(p) && (
-                                            <span style={{ color: "var(--text-muted)", fontWeight: 400 }}> · until {ownershipExpiry(p)}</span>
+                                    <div style={{ overflow: "hidden" }}>
+                                        <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                            <span style={{ fontWeight: 500 }}>{p.uploaded_by_name || "—"}</span>
+                                            {(() => {
+                                                const src = p?.sourced_by?.source;
+                                                const label = src === "email" ? "Email" : src === "manual" ? "Manual" : "Pool";
+                                                const style: React.CSSProperties = src === "email"
+                                                    ? { background: "#dbeafe", color: "#1d4ed8", border: "1px solid #bfdbfe" }
+                                                    : src === "manual"
+                                                        ? { background: "#dcfce7", color: "#166534", border: "1px solid #bbf7d0" }
+                                                        : { background: "var(--bg-secondary)", color: "var(--text-muted)", border: "1px solid var(--border-subtle)" };
+                                                return (
+                                                    <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 5px", borderRadius: 3, marginLeft: 5, flexShrink: 0, ...style }}>
+                                                        {label}
+                                                    </span>
+                                                );
+                                            })()}
+                                            {ownershipExpiry(p) && (
+                                                <span style={{ color: "var(--text-muted)", fontWeight: 400 }}> · until {ownershipExpiry(p)}</span>
+                                            )}
+                                        </div>
+                                        {p.created_at && (
+                                            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                                {fmtTs(p.created_at)}
+                                            </div>
                                         )}
                                     </div>
                                 </td>

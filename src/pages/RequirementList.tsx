@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { api } from "../services/api";
 import StatusBadge from "../components/StatusBadge";
 import "../styles/pages.css";
+import { fmtDate } from "../utils/dateUtils";
 
 interface Requirement {
     id: string;
@@ -30,7 +31,7 @@ export default function RequirementList() {
     useEffect(() => {
         api.get("/requirements")
             .then((data) => setRequirements(data || []))
-            .catch(() => {})
+            .catch(() => { })
             .finally(() => setLoading(false));
     }, []);
 
@@ -141,7 +142,7 @@ export default function RequirementList() {
                                     <td>{renderSla(req)}</td>
                                     <td><StatusBadge status={req.status} /></td>
                                     <td className="text-muted text-sm">
-                                        {new Date(req.created_at).toLocaleDateString()}
+                                        {fmtDate(req.created_at)}
                                     </td>
                                 </tr>
                             ))}

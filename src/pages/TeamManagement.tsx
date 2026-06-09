@@ -4,6 +4,7 @@ import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import Icon from "../components/Icon";
 import "../styles/pages.css";
+import { fmtDate } from "../utils/dateUtils";
 
 interface User {
     id: string;
@@ -286,7 +287,7 @@ export default function TeamManagement() {
                                         <td className="text-sm">{inv.invited_by_name || "—"}</td>
                                         <td className="text-sm text-muted">{inv.notes || "—"}</td>
                                         <td className="text-sm text-muted">
-                                            {inv.created_at ? new Date(inv.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
+                                            {fmtDate(inv.created_at)}
                                         </td>
                                         <td>
                                             {inv.used

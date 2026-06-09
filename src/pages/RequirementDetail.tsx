@@ -5,6 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import { api } from "../services/api";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import StatusBadge from "../components/StatusBadge";
+import { fmtTs } from "../utils/dateUtils";
 
 import { useJdViewer } from "../context/JdViewerContext";
 import ProfilesGrid from "../components/ProfilesGrid";
@@ -164,7 +165,7 @@ function SubmissionDetailModal({ app, prof, isAdmin, onClose }: { app: Applicati
                         <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 3, display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
                             <StatusBadge status={app.status} />
                             <span style={{ color: "var(--text-muted)" }}>·</span>
-                            <span>{new Date(app.sent_at).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}</span>
+                            <span>{fmtTs(app.sent_at)}</span>
                             {isAdmin && app.recruiter_name && (<><span style={{ color: "var(--text-muted)" }}>· by</span><span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{app.recruiter_name}</span></>)}
                         </div>
                     </div>
@@ -304,6 +305,7 @@ export default function RequirementDetail({ reqId: reqIdProp }: { reqId?: string
     const queryClient = useQueryClient();
     const [generatingSuggestions, setGeneratingSuggestions] = useState(false);
     const [suggestionsError, setSuggestionsError] = useState<string | null>(null);
+    const [profileSortKey, setProfileSortKey] = useState<"recent" | "smart">("recent");
 
     const {
         data: _profilesResult,
@@ -704,7 +706,7 @@ export default function RequirementDetail({ reqId: reqIdProp }: { reqId?: string
                             <span className="detail-meta-item">
                                 Deadline:{" "}
                                 <strong>
-                                    {new Date(req.sla_deadline_ist).toLocaleString()}
+                                    {fmtTs(req.sla_deadline_ist)}
                                 </strong>
                             </span>
                         )}
@@ -712,16 +714,16 @@ export default function RequirementDetail({ reqId: reqIdProp }: { reqId?: string
                             <span className="detail-meta-item">
                                 First Submission:{" "}
                                 <strong>
-                                    {new Date(req.first_submission_at_ist).toLocaleString()}
+                                    {fmtTs(req.first_submission_at_ist)}
                                 </strong>
                             </span>
                         )}
                         <span className="detail-meta-item" style={{ color: "var(--text-muted)", fontSize: "12px" }}>
-                            Created: {new Date(req.created_at).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}
+                            Created: {fmtTs(req.created_at)}
                         </span>
                         {req.updated_at && (
                             <span className="detail-meta-item" style={{ color: "var(--text-muted)", fontSize: "12px" }}>
-                                Edited: {new Date(req.updated_at).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}
+                                Edited: {fmtTs(req.updated_at)}
                             </span>
                         )}
                     </div>
@@ -1021,7 +1023,7 @@ export default function RequirementDetail({ reqId: reqIdProp }: { reqId?: string
                                                     </td>
                                                     <td><StatusBadge status={app.status} /></td>
                                                     <td style={{ fontSize: 13 }}>{app.ai_score != null ? <span className="font-mono">{app.ai_score}/100</span> : <span className="text-muted">—</span>}</td>
-                                                    <td style={{ fontSize: 12, color: "var(--text-muted)", whiteSpace: "nowrap" }}>{new Date(app.sent_at).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}</td>
+                                                    <td style={{ fontSize: 12, color: "var(--text-muted)", whiteSpace: "nowrap" }}>{fmtTs(app.sent_at)}</td>
                                                     <td onClick={(e) => e.stopPropagation()}>
                                                         {effectiveAdmin && getNextStatuses(app.status).length > 0 && (
                                                             <button
@@ -1067,6 +1069,14 @@ export default function RequirementDetail({ reqId: reqIdProp }: { reqId?: string
                                     {suggestionsError && <span style={{ marginLeft: "0.75rem", color: "#dc2626" }}>{suggestionsError}</span>}
                                 </div>
                                 <div style={{ display: "flex", gap: "0.5rem" }}>
+                                    <button
+                                        className="btn btn-ghost btn-sm"
+                                        onClick={() => setProfileSortKey(k => k === "recent" ? "smart" : "recent")}
+                                        title={profileSortKey === "recent" ? "Currently sorted by upload date — click for smart sort" : "Currently smart sort — click for recent first"}
+                                        style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}
+                                    >
+                                        {profileSortKey === "recent" ? "↓ Recent" : "★ Smart"}
+                                    </button>
                                     <button
                                         className="btn btn-ghost btn-sm"
                                         onClick={handleScanTalentPool}
@@ -1116,6 +1126,7 @@ export default function RequirementDetail({ reqId: reqIdProp }: { reqId?: string
                                 onRemove={handleRemoveProfile}
                                 currentUserId={user?.id}
                                 isAdmin={effectiveAdmin}
+                                defaultSortKey={profileSortKey}
                             />
                         </>
                     )}

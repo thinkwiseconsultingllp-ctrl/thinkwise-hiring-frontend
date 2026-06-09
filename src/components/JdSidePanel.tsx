@@ -1,6 +1,7 @@
 import { useJdViewer } from "../context/JdViewerContext";
 import StatusBadge from "./StatusBadge";
 import "./JdSidePanel.css";
+import { fmtTs } from "../utils/dateUtils";
 
 const REQ_TYPE_LABELS: Record<string, string> = {
     FULL_TIME: "Full Time",
@@ -38,8 +39,8 @@ export default function JdSidePanel() {
     const r = activeReq;
     const typeLabel = r.requirement_type ? (REQ_TYPE_LABELS[r.requirement_type] ?? r.requirement_type) : null;
     const sla = r.sla_hours_to_first_submission != null ? `${r.sla_hours_to_first_submission}h` : null;
-    const deadline = r.sla_deadline_ist ? new Date(r.sla_deadline_ist).toLocaleString() : null;
-    const created = r.created_at ? new Date(r.created_at).toLocaleString() : null;
+    const deadline = r.sla_deadline_ist ? fmtTs(r.sla_deadline_ist) : null;
+    const created = r.created_at ? fmtTs(r.created_at) : null;
 
     return (
         <aside className={`jd-panel ${isOpen ? "jd-panel--open" : ""}`} role="complementary" aria-label="Job description viewer">

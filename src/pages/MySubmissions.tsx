@@ -1,26 +1,12 @@
 import { useState, useEffect } from "react";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
+import { fmtDate, fmtTs } from "../utils/dateUtils";
 import { analyticsApi } from "../services/api";
 import StatusBadge from "../components/StatusBadge";
 import "../styles/pages.css";
 
 const APP_STATUSES = ["", "SENT", "L1_SELECTED", "L2_SELECTED", "HR_ROUND", "SELECTED", "HOLD", "JOINED", "REJECTED"];
 
-function fmtDate(v?: string | null) {
-    if (!v) return "—";
-    try { return new Date(v).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }); }
-    catch { return v as string; }
-}
-
-function fmtDateTime(v?: string | null) {
-    if (!v) return "—";
-    try {
-        return new Date(v).toLocaleString("en-IN", {
-            day: "2-digit", month: "short", year: "numeric",
-            hour: "2-digit", minute: "2-digit", hour12: true,
-        });
-    } catch { return v as string; }
-}
 
 function dash(v: any) { return v == null || v === "" ? "—" : v; }
 
@@ -63,7 +49,7 @@ function SubmissionModal({ sub, onClose }: { sub: any; onClose: () => void }) {
                         <div style={{ fontSize: 17, fontWeight: 800, color: "var(--text-primary)" }}>{sub.candidate_name || "—"}</div>
                         <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 3, display: "flex", gap: "0.4rem", flexWrap: "wrap", alignItems: "center" }}>
                             <StatusBadge status={sub.status} />
-                            <span style={{ color: "var(--text-muted)" }}>· {fmtDateTime(sub.sent_at)}</span>
+                            <span style={{ color: "var(--text-muted)" }}>· {fmtTs(sub.sent_at)}</span>
                             {sub.requirement_name && <span style={{ color: "var(--text-muted)" }}>· {sub.requirement_name}</span>}
                             {sub.company_name && <span style={{ color: "var(--text-muted)" }}>· {sub.company_name}</span>}
                         </div>
