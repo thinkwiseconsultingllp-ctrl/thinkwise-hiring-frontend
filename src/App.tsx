@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
 import "./App.css";
 
 // Public pages
@@ -29,6 +29,11 @@ import TeamManagement from "./pages/TeamManagement";
 import Clients from "./pages/Clients";
 import EmailResumes from "./components/EmailResume";
 import LinkedInSearchPage from "./pages/LinkedInSearchPage";
+
+function RequirementDetailRoute() {
+  const { id } = useParams<{ id: string }>();
+  return <RequirementDetail key={id} />;
+}
 
 function App() {
   return (
@@ -91,7 +96,6 @@ function App() {
           {/* New Email Resumes Page */}
           <Route path="/email-resumes" element={<EmailResumes />} />
           <Route path="/linkedin-search" element={<LinkedInSearchPage />} />
-
         </Route>
 
         {/* Catch all */}
